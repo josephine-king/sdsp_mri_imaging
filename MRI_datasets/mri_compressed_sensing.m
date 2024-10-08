@@ -1,11 +1,11 @@
 clc; clear all; close all;
 
-load('/Users/josephineking/Desktop/sdsp_mri_imaging/MRI_datasets/Slice4/GoodData/slice4_channel1.mat');
-load('/Users/josephineking/Desktop/sdsp_mri_imaging/MRI_datasets/Slice4/GoodData/slice4_channel2.mat');
-load('/Users/josephineking/Desktop/sdsp_mri_imaging/MRI_datasets/Slice4/GoodData/slice4_channel3.mat');
-load('/Users/josephineking/Desktop/sdsp_mri_imaging/MRI_datasets/Slice4/BadData/slice4_channel1.mat');
-load('/Users/josephineking/Desktop/sdsp_mri_imaging/MRI_datasets/Slice4/BadData/slice4_channel2.mat');
-load('/Users/josephineking/Desktop/sdsp_mri_imaging/MRI_datasets/Slice4/BadData/slice4_channel3.mat');
+load('MRI_datasets/Slice4/GoodData/slice4_channel1.mat');
+load('MRI_datasets/Slice4/GoodData/slice4_channel2.mat');
+load('MRI_datasets/Slice4/GoodData/slice4_channel3.mat');
+load('MRI_datasets/Slice4/BadData/slice4_channel1.mat');
+load('MRI_datasets/Slice4/BadData/slice4_channel2.mat');
+load('MRI_datasets/Slice4/BadData/slice4_channel3.mat');
 
  function v=shuffle(v)
      v=v(randperm(length(v)));
@@ -114,12 +114,12 @@ imagesc(C);
 %%
 
 n = 512*128; % dimension of s
-p = round(n/50);
+p = round(n/10);
 kspace = reshape(slice4_channel1_goodData, n, 1);
 %C = sparse_matrix(p,n,p*500);
 %C = center_matrix(p,n);
-%C = radial_matrix(p,n,30,50);
-C = spiral_matrix(p,n,50,100000,15);
+C = radial_matrix(p,n,30,50);
+%C = spiral_matrix(p,n,50,100000,15);
 y = C*kspace;
 
 close all
