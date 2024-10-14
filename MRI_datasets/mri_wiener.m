@@ -1,5 +1,5 @@
 %%
-image_idx = "1";
+image_idx = "4";
 [good_channel1, good_channel2, good_channel3] = get_data(image_idx, 1);
 [bad_channel1, bad_channel2, bad_channel3] = get_data(image_idx, 0);
 
@@ -46,6 +46,7 @@ subplot(2,3,6)
 imagesc(100*log(abs(good_channel3)));
 title("K-space data for good channel 3")
 
+
 %% Fuse first, clean second
 % Find the corrupted lines and replace them with the average of the lines
 % next to them
@@ -53,7 +54,7 @@ image_idx = "1";
 [bad_channel1, bad_channel2, bad_channel3] = get_data(image_idx, 0);
 fused_bad_channels = fuse_channels_simple(bad_channel1, bad_channel2, bad_channel3);
 
-[corrupted_pixels, corrupted_pixels2] = get_corrupted_pixels(fused_bad_channels, .2);
+corrupted_pixels = get_corrupted_pixels(fused_bad_channels, 0.9, 105);
 cleaned_channels = clean_corrupted_pixels(fused_bad_channels, corrupted_pixels);
 
 window_dims = [3,3];
@@ -61,36 +62,43 @@ window_dims = [3,3];
 
 filtered_channels = wiener_filter(fused_bad_channels, corrupted_pixels, window_dims);
 piecewise_filtered_channels = piecewise_wiener_filter(fused_bad_channels, corrupted_pixels, window_dims, 16, 4);
-center_filtered_channels = center_piecewise_wiener_filter(fused_bad_channels, corrupted_pixels, window_dims, [128,128]);
+center_filtered_channels = center_piecewise_wiener_filter(fused_bad_channels, corrupted_pixels, window_dims, [128,64]);
 
 %% Clean first, fuse second
 % Find the corrupted lines and replace them with the average of the lines
 % next to them
-window_dims = [3,3];
+image_idx = "3";
+[bad_channel1, bad_channel2, bad_channel3] = get_data(image_idx, 0);
+fused_bad_channels = fuse_channels_simple(bad_channel1, bad_channel2, bad_channel3);
 
-[corrupted_pixels, corrupted_pixels2] = get_corrupted_pixels(bad_channel1, .2);
-cleaned_channel1 = clean_corrupted_pixels(bad_channel1, corrupted_pixels);
-cleaned_channel2 = clean_corrupted_pixels(bad_channel2, corrupted_pixels);
-cleaned_channel3 = clean_corrupted_pixels(bad_channel3, corrupted_pixels);
+window_dims = [1,3];
+
+corrupted_pixels1 = get_corrupted_pixels(bad_channel1, .9, 105);
+corrupted_pixels2 = get_corrupted_pixels(bad_channel2, .9, 105);
+corrupted_pixels3 = get_corrupted_pixels(bad_channel3, .9, 105);
+
+cleaned_channel1 = clean_corrupted_pixels(bad_channel1, corrupted_pixels1);
+cleaned_channel2 = clean_corrupted_pixels(bad_channel2, corrupted_pixels2);
+cleaned_channel3 = clean_corrupted_pixels(bad_channel3, corrupted_pixels3);
 cleaned_channels = fuse_channels_wiener(cleaned_channel1, cleaned_channel2, cleaned_channel3);
 
-[Rx1, r_dx1] = get_Rx_rdx(bad_channel1, window_dims, corrupted_pixels, 1, size(fused_bad_channels));
-[Rx2, r_dx2] = get_Rx_rdx(bad_channel2, window_dims, corrupted_pixels, 1, size(fused_bad_channels));
-[Rx3, r_dx3] = get_Rx_rdx(bad_channel3, window_dims, corrupted_pixels, 1, size(fused_bad_channels));
+[Rx1, r_dx1] = get_Rx_rdx(bad_channel1, window_dims, corrupted_pixels1, 1, size(fused_bad_channels));
+[Rx2, r_dx2] = get_Rx_rdx(bad_channel2, window_dims, corrupted_pixels2, 1, size(fused_bad_channels));
+[Rx3, r_dx3] = get_Rx_rdx(bad_channel3, window_dims, corrupted_pixels3, 1, size(fused_bad_channels));
 
-filtered_channel1 = wiener_filter(bad_channel1, corrupted_pixels, window_dims);
-filtered_channel2 = wiener_filter(bad_channel2, corrupted_pixels, window_dims);
-filtered_channel3 = wiener_filter(bad_channel3, corrupted_pixels, window_dims);
+filtered_channel1 = wiener_filter(bad_channel1, corrupted_pixels1, window_dims);
+filtered_channel2 = wiener_filter(bad_channel2, corrupted_pixels2, window_dims);
+filtered_channel3 = wiener_filter(bad_channel3, corrupted_pixels3, window_dims);
 filtered_channels = fuse_channels_wiener(filtered_channel1, filtered_channel2, filtered_channel3);
 
-piecewise_filtered_channel1 = piecewise_wiener_filter(bad_channel1, corrupted_pixels, window_dims, 16, 4);
-piecewise_filtered_channel2 = piecewise_wiener_filter(bad_channel2, corrupted_pixels, window_dims, 16, 4);
-piecewise_filtered_channel3 = piecewise_wiener_filter(bad_channel3, corrupted_pixels, window_dims, 16, 4);
+piecewise_filtered_channel1 = piecewise_wiener_filter(bad_channel1, corrupted_pixels1, window_dims, 7, 3);
+piecewise_filtered_channel2 = piecewise_wiener_filter(bad_channel2, corrupted_pixels2, window_dims, 7, 3);
+piecewise_filtered_channel3 = piecewise_wiener_filter(bad_channel3, corrupted_pixels3, window_dims, 7, 3);
 piecewise_filtered_channels = fuse_channels_wiener(piecewise_filtered_channel1, piecewise_filtered_channel2, piecewise_filtered_channel3);
 
-center_filtered_channel1 = center_piecewise_wiener_filter(bad_channel1, corrupted_pixels, window_dims, [128,128]);
-center_filtered_channel2 = center_piecewise_wiener_filter(bad_channel2, corrupted_pixels, window_dims, [128,128]);
-center_filtered_channel3 = center_piecewise_wiener_filter(bad_channel3, corrupted_pixels, window_dims, [128,128]);
+center_filtered_channel1 = center_piecewise_wiener_filter(bad_channel1, corrupted_pixels1, window_dims, [256,64]);
+center_filtered_channel2 = center_piecewise_wiener_filter(bad_channel2, corrupted_pixels2, window_dims, [256,64]);
+center_filtered_channel3 = center_piecewise_wiener_filter(bad_channel3, corrupted_pixels3, window_dims, [256,64]);
 center_filtered_channels = fuse_channels_wiener(center_filtered_channel1, center_filtered_channel2, center_filtered_channel3);
 
 
@@ -132,19 +140,16 @@ imagesc(center_filtered_adj_img);
 title("Center Wiener filtered image")
 
 figure(2); 
-subplot(2,3,1)
-imagesc(100*log(abs(fused_bad_channels)));
-title("Fused k-space data")
-subplot(2,3,2)
+subplot(2,2,1)
 imagesc(100*log(abs(cleaned_channels)));
 title("Fused + cleaned k-space data")
-subplot(2,3,3)
+subplot(2,2,2)
 imagesc(100*log(abs(filtered_channels)));
 title("Fused + Wiener filtered k-space data")
-subplot(2,3,4)
+subplot(2,2,3)
 imagesc(100*log(abs(piecewise_filtered_channels)));
 title("Fused + Wiener piecewise filtered k-space data")
-subplot(2,3,5)
+subplot(2,2,4)
 imagesc(100*log(abs(center_filtered_channels)));
 title("Fused + Wiener center filtered k-space data")
 
@@ -170,6 +175,15 @@ subplot(2,3,5)
 imagesc(abs(r_dx2))
 subplot(2,3,6)
 imagesc(abs(r_dx3))
+
+figure(7)
+subplot(1,3,1)
+imagesc(corrupted_pixels1)
+subplot(1,3,2)
+imagesc(corrupted_pixels2)
+subplot(1,3,3)
+imagesc(corrupted_pixels3)
+
 
 %% Functions
 
@@ -248,7 +262,7 @@ function filtered_channel = center_piecewise_wiener_filter(channel, corrupted_pi
                 if (row > center_start_rows && row < center_end_rows && col > center_start_cols && col < center_end_cols)
                     d = w_center'*x;
                 else
-                    d = w_edge'*x;
+                    d =w_edge'*x;
                 end
                 filtered_channel(row,col) = d;
             end
@@ -461,61 +475,40 @@ function [Rx, r_dx] = get_Rx_rdx(channel, window_dims, corrupted_pixels, center_
     Rx = reshape(Rx, window_rows*window_cols-window_rows, window_rows*window_cols-window_rows);
 end
 
-function [corrupted_pixels1, corrupted_pixels3]  = get_corrupted_pixels(channel, threshold)
+function corrupted_pixels1  = get_corrupted_pixels(channel, threshold1, threshold2)
     num_rows = size(channel,1);
     num_cols = size(channel,2);
-    corrupted_pixels3 = zeros(num_rows,num_cols);
+    corrupted_pixels = zeros(num_rows,num_cols);
+    row_ns = 3;
+    col_ns = 1;
+    for col = 1+col_ns:num_cols-col_ns
+        for row = 1+row_ns:num_rows-row_ns
+            m = channel(row-row_ns:row+row_ns, col-col_ns:col+col_ns);
+            this_col = m(:,col_ns+1);
+            m(:,col_ns+1) = [];
+            Pm = mean(abs(m).^2);
+            P_this_col = mean(abs(this_col).^2);
 
-    power_normalized_channel = channel./(abs(channel).^2);
-
-    for col = 2:num_cols-1
-        %norm_col_power = norm(abs(channel(:,col)).^2,2);
-        %normalized_col = channel(:,col)/norm_col_power;
-        
-        total_diff = 0;
-
-        for neighbor_col = [col-1, col+1]
-            norm_neighbor_power = mean(abs(channel(:, neighbor_col)).^2);
-            normalized_neighbor = channel(:,neighbor_col)/norm_neighbor_power;
-            normalized_col = channel(:,col)/norm_neighbor_power;
-            diff = mean(abs(normalized_neighbor-normalized_col));
-            diff = mean(abs(power_normalized_channel(:,neighbor_col)-power_normalized_channel(:,col)));
-
-            total_diff = total_diff + diff;
-        end
-        %if (norm(total_diff,2) > threshold)
-            corrupted_pixels3(:,col) = diff*ones(num_rows,1);
-        %end
-    end
-
-    corrupted_pixels2 = zeros(num_rows,num_cols);
-    for row = 2:num_rows-1
-        for col = 2:num_cols-1
-            this_pixel_power = abs(power_normalized_channel(row,col)).^2;
-            total_diff = 0;
-
-            for neighbor_col = [col-1, col, col+1]
-                for neighbor_row = [row-1, row, row+1]
-                    if (neighbor_col == col && neighbor_row == row)
-                        continue
-                    end
-                    neighbor_power = abs(power_normalized_channel(neighbor_row, neighbor_col)).^2;
-                    diff = abs(10*neighbor_power-10*this_pixel_power);
-                    normalized_diff = diff/neighbor_power;
-                    total_diff = total_diff + normalized_diff;
-                end
+            r = abs(Pm-P_this_col)/Pm;
+ 
+            if (r > threshold1)
+                corrupted_pixels(row,col) = r;
             end
-
-            %if (normalized_diff > threshold)
-                corrupted_pixels2(row,col) = total_diff;
-            %end
+        end
+        if (norm(corrupted_pixels(:,col),1) > threshold2)
+            lower = 1;%round(size(corrupted_pixels,1)/8);
+            upper = size(corrupted_pixels,1);%round(7*size(corrupted_pixels,1)/8);
+            corrupted_pixels(:,col) = zeros(size(corrupted_pixels,1),1);
+            corrupted_pixels(lower:upper,col) = ones(upper-lower+1,1);
+        else
+            corrupted_pixels(:,col) = zeros(size(corrupted_pixels,1),1);
         end
     end
 
     corrupted_pixels1 = zeros(num_rows,num_cols);
-    corrupted_lines = [8,22,38,54,70,86,102,118];
+    corrupted_lines = [6,22,38,54,70,86,102,118];
     for idx = 1:length(corrupted_lines)
-        corrupted_pixels1(128:383,corrupted_lines(idx)) = ones(256,1);
+        corrupted_pixels1(:,corrupted_lines(idx)) = ones(512,1);
     end
 end
 
@@ -603,5 +596,16 @@ function [var_v, var_c] = calculate_variance(channel, noise_img_frac)
     cols_dim = size(channel,2);
     noise_area = channel(1:round(noise_img_frac*rows_dim),1:round(noise_img_frac*cols_dim));
     var_v = var(reshape(noise_area, 1, []));
+end
+
+function padchan = pad_channel(x_pad, y_pad, chan)
+
+    y_dim = size(chan,1);
+    x_dim = size(chan,2);
+    x_padding = zeros(y_dim, x_pad);
+    y_padding = zeros (y_pad, x_dim+x_pad*2);
+
+    padchan = [x_padding, chan, x_padding];
+    padchan = [y_padding; padchan; y_padding];
 end
 
