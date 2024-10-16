@@ -60,7 +60,7 @@ corrupted_pixels = functions.get_corrupted_pixels(fused_bad_channels, 0.9, 105);
 cleaned_channels = clean_corrupted_pixels(fused_bad_channels, corrupted_pixels);
 
 window_dims = [3,3];
-[Rx, r_dx] = get_Rx_rdx(fused_bad_channels, window_dims, corrupted_pixels, 1, size(fused_bad_channels));
+[Rx, r_dx] = functions.get_Rx_rdx(fused_bad_channels, window_dims, corrupted_pixels, 1, size(fused_bad_channels));
 
 filtered_channels = wiener_filter(fused_bad_channels, corrupted_pixels, window_dims);
 piecewise_filtered_channels = piecewise_wiener_filter(fused_bad_channels, corrupted_pixels, window_dims, 16, 4);
@@ -85,9 +85,9 @@ cleaned_channel2 = clean_corrupted_pixels(bad_channel2, corrupted_pixels2);
 cleaned_channel3 = clean_corrupted_pixels(bad_channel3, corrupted_pixels3);
 cleaned_channels = functions.fuse_channels_wiener(cleaned_channel1, cleaned_channel2, cleaned_channel3);
 
-[Rx1, r_dx1] = get_Rx_rdx(bad_channel1, window_dims, corrupted_pixels1, 1, size(fused_bad_channels));
-[Rx2, r_dx2] = get_Rx_rdx(bad_channel2, window_dims, corrupted_pixels2, 1, size(fused_bad_channels));
-[Rx3, r_dx3] = get_Rx_rdx(bad_channel3, window_dims, corrupted_pixels3, 1, size(fused_bad_channels));
+[Rx1, r_dx1] = functions.get_Rx_rdx(bad_channel1, window_dims, corrupted_pixels1, 1, size(fused_bad_channels));
+[Rx2, r_dx2] = functions.get_Rx_rdx(bad_channel2, window_dims, corrupted_pixels2, 1, size(fused_bad_channels));
+[Rx3, r_dx3] = functions.get_Rx_rdx(bad_channel3, window_dims, corrupted_pixels3, 1, size(fused_bad_channels));
 
 filtered_channel1 = wiener_filter(bad_channel1, corrupted_pixels1, window_dims);
 filtered_channel2 = wiener_filter(bad_channel2, corrupted_pixels2, window_dims);
@@ -191,6 +191,7 @@ imagesc(corrupted_pixels3)
 %% Functions
 
 function filtered_channel = center_piecewise_wiener_filter(channel, corrupted_pixels, window_dims, center_dims)
+    functions = common_functions;
     filtered_channel = channel;
     % The square window excludes the middle column, so the order is smaller
     % than the window by a factor of window_size
@@ -206,8 +207,8 @@ function filtered_channel = center_piecewise_wiener_filter(channel, corrupted_pi
     center_end_cols = center_start_cols + center_dims(2);
 
     % Calculate a separate Rx and r_dx for the center vs the edges
-    [Rx_center, r_dx_center] = get_Rx_rdx(channel, window_dims, corrupted_pixels, 1, center_dims);
-    [Rx_edge, r_dx_edge] = get_Rx_rdx(channel, window_dims, corrupted_pixels, 0, center_dims);
+    [Rx_center, r_dx_center] = functions.get_Rx_rdx(channel, window_dims, corrupted_pixels, 1, center_dims);
+    [Rx_edge, r_dx_edge] = functions.get_Rx_rdx(channel, window_dims, corrupted_pixels, 0, center_dims);
 
     % Calculate the optimal filter w
     w_center = inv(Rx_center)*r_dx_center;
@@ -277,13 +278,14 @@ function filtered_channel = piecewise_wiener_filter(channel, corrupted_pixels, w
 end
 
 function filtered_channel = wiener_filter(channel, corrupted_pixels, window_dims)
+    functions = common_functions;
     filtered_channel = channel;
     % The square window excludes the middle column, so the order is smaller
     % than the window by a factor of window_size
     row_padding = (window_dims(1)-1)/2;
     col_padding = (window_dims(2)-1)/2;
     % Find the correlation matrix and cross correlations between d and x
-    [Rx, r_dx] = get_Rx_rdx(channel, window_dims, corrupted_pixels, 1, size(channel));
+    [Rx, r_dx] = functions.get_Rx_rdx(channel, window_dims, corrupted_pixels, 1, size(channel));
     % Calculate the optimal filter w
     w = inv(Rx)*r_dx;
     for row = 1+row_padding:size(channel,1)-row_padding
@@ -302,95 +304,6 @@ function filtered_channel = wiener_filter(channel, corrupted_pixels, window_dims
     end
 end
 
-function [Rx, r_dx] = get_Rx_rdx(channel, window_dims, corrupted_pixels, center_n_edge, center_dims)
-    
-    window_rows = window_dims(1);
-    window_cols = window_dims(2);
-
-    center_start_rows = max(round((size(channel, 1) - center_dims(1)) / 2), 1);
-    center_start_cols = max(round((size(channel, 2) - center_dims(2)) / 2));
-    center_end_rows = center_start_rows + center_dims(1);
-    center_end_cols = center_start_cols + center_dims(2);
-
-    % Initialize matrices for both cross-correlation and autocorrelation
-    row_rdx = [];
-    row_Rs = [];
-
-    window_start_rows = 1;
-    while (window_start_rows + window_rows - 1 <= size(channel, 1))
-        col_rdx = [];
-        col_Rs = [];
-
-        window_row_range = window_start_rows:window_start_rows + window_rows - 1;
-        if (window_rows == 1)
-            window_row_in_center = (window_start_rows >= center_start_rows && window_start_rows <= center_end_rows);
-        else
-            window_row_in_center = min(window_start_rows + window_rows - 1, center_end_rows) > max(window_start_rows, center_start_rows);
-        end
-        window_start_cols = 1;
-
-        while (window_start_cols + window_cols - 1 <= size(channel, 2))
-            window_end_rows = window_start_rows + window_rows - 1;
-            window_end_cols = window_start_cols + window_cols - 1;
-            window_col_range = window_start_cols:window_start_cols + window_cols - 1;
-            if (window_cols == 1) 
-                window_col_in_center = (window_start_cols >= center_start_cols && window_start_cols <= center_end_cols);
-            else 
-                window_col_in_center = min(window_start_cols + window_cols - 1, center_end_cols) > max(window_start_cols, center_start_cols);
-            end
-            window_in_center = window_row_in_center && window_col_in_center;
-
-            if (center_n_edge && ~window_in_center) 
-                window_start_cols = window_start_cols + 1; 
-                continue; 
-            end
-            if (~center_n_edge && window_in_center) 
-                window_start_cols = window_start_cols + 1; 
-                continue; 
-            end
-         
-            m = channel(window_start_rows:window_end_rows, window_start_cols:window_end_cols);
-            d = m(round((window_rows + 1) / 2), round((window_cols + 1) / 2));
-            m(:, round((window_cols + 1) / 2)) = []; 
-            v = reshape(m, [], 1);
-
-            % Check if there are any corrupted pixels before computing Rx.
-            % The center row doesn't matter as it's not part of the calculation
-            cps = corrupted_pixels(window_row_range, window_col_range);
-            cps(:,round(window_cols+1)/2) = [];
-            if (any(cps, 'all'))
-                window_start_cols = window_start_cols+1;
-                continue; 
-            end
-            % Autocorrelation computation
-            R = v * ctranspose(v);
-            col_Rs = [col_Rs, reshape(R, [], 1)];
-
-            % Check if there are any corrupted pixels before computing Rx
-            if (any(corrupted_pixels(window_row_range, window_col_range), 'all'))
-                window_start_cols = window_start_cols + 1; 
-                continue; 
-            end
-            % Cross-correlation computation
-            curr_rdx = d * conj(v);
-            col_rdx = [col_rdx, curr_rdx];
-
-            window_start_cols = window_start_cols + 1;
-        end
-
-        avg_col_rdx = mean(col_rdx, 2);
-        row_rdx = [row_rdx, avg_col_rdx];
-
-        avg_col_Rs = mean(col_Rs, 2);
-        row_Rs = [row_Rs, avg_col_Rs];
-
-        window_start_rows = window_start_rows + 1;
-    end
-
-    r_dx = mean(row_rdx, 2);
-    Rx = mean(row_Rs, 2);
-    Rx = reshape(Rx, window_rows*window_cols-window_rows, window_rows*window_cols-window_rows);
-end
 
 function cleaned_channel = clean_corrupted_pixels(channel, corrupted_pixels)
     cleaned_channel = channel;

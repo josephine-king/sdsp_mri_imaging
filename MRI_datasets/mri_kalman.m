@@ -1,18 +1,33 @@
 functions = common_functions;
 
-[bad_channel1, bad_channel2, bad_channel3] = functions.get_data("4", 0);
+[bad_channel1, bad_channel2, bad_channel3] = functions.get_data("1", 0);
 corrupted_pixels = functions.get_corrupted_pixels(bad_channel1, 0.9, 105);
+bad_channel = functions.fuse_channels_wiener(bad_channel1, bad_channel2, bad_channel3);
 
-Q = eye(3,3)*10;
-estimated_channel1 = kalman_filter(bad_channel1, corrupted_pixels, Q);
-estimated_channel2 = kalman_filter(bad_channel2, corrupted_pixels, Q);
-estimated_channel3 = kalman_filter(bad_channel3, corrupted_pixels, Q);
+kalman_n_rows = 5;
+kalman_n_cols = 5;
+kalman_dims = [kalman_n_rows,kalman_n_cols];
 
-bad_img = functions.get_image_non_fused(bad_channel1, bad_channel2, bad_channel3);
-bad_adj_img = functions.adjust_image(bad_img, 0);
+variance = functions.calculate_variance(bad_channel1,1/16);
+Q1 = variance*eye(kalman_n_rows*kalman_n_cols);
+estimated_channel1 = kalman_filter_2d(bad_channel1, corrupted_pixels, Q1, kalman_dims);
 
-corr_img = functions.get_image_non_fused(estimated_channel1, estimated_channel2, estimated_channel3);
-corr_adj_img = functions.adjust_image(corr_img, 0);
+variance = functions.calculate_variance(bad_channel2,1/16);
+Q2 = variance*eye(kalman_n_rows*kalman_n_cols);
+estimated_channel2 = kalman_filter_2d(bad_channel2, corrupted_pixels, Q2, kalman_dims);
+
+variance = functions.calculate_variance(bad_channel3,1/16);
+Q3 = variance*eye(kalman_n_rows*kalman_n_cols);
+estimated_channel3 = kalman_filter_2d(bad_channel3, corrupted_pixels, Q3, kalman_dims);
+
+fused_estimated_channels = functions.fuse_channels_wiener(estimated_channel1, estimated_channel2, estimated_channel3);
+
+bad_img = functions.get_image(bad_channel);
+bad_adj_img = functions.adjust_image(bad_img, 1);
+
+corr_img = functions.get_image(fused_estimated_channels);
+corr_adj_img = functions.adjust_image(corr_img, 1);
+
 
 figure(3)
 axis image, 
@@ -26,66 +41,79 @@ title("Good image, fusion after IFFT")
 
 figure(2)
 subplot(1,2,1)
-imagesc(100*log(abs(bad_channel1)));
+imagesc(100*log(abs(bad_channel)));
 subplot(1,2,2)
-imagesc(100*log(abs(estimated_channel1)));
+imagesc(100*log(abs(fused_estimated_channels)));
 title("Good image, fusion after IFFT")
 
 
 %%
-function estimated_y = kalman_filter(channel, corrupted_pixels, Q)
-    % Initialize state vector
-    % State vector: [x_left; x_corrupted; x_right]
-    n = 3; 
-    num_rows = size(channel,1);
-    num_cols = size(channel,2);
-    channel = reshape(channel, 1, []);
-    corrupted_pixels = reshape(corrupted_pixels, 1, []);
-    num_iterations = size(channel,2);
-    x = channel(1,1:n)'; % Initial guess for x_corrupted can be zero or any initial value
-    
-    % Initialize error covariance matrix
-    P = eye(3); % 3x3 identity matrix for initial covariance
 
-    % State transition matrix
-    F = [1, 0, 0;  % x_left remains the same
-         0, 1, 0;  % x_corrupted
-         0, 0, 1];  % x_right remains the same
+function estimated_channel = kalman_filter_2d(channel, corrupted_pixels, Q, dims)
+    n_rows = dims(1);
+    n_cols = dims(2);
+    half_n_rows = floor(n_rows / 2);
+    half_n_cols = floor(n_cols / 2);
+    num_rows = size(channel, 1);
+    num_cols = size(channel, 2);
 
-    % Observation matrix (observing only the corrupted pixel)
-    C = [0, 1, 0];  
+    % Initialize the estimated channel
+    estimated_channel = zeros(size(channel));
 
-    % Preallocate arrays for results
-    estimated_y = zeros(1, num_iterations);
+    % Initialize the state vector using the first window
+    x = reshape(channel(1:half_n_rows*2+1, 1:half_n_cols*2+1), [], 1);
 
-    for k = 2:size(channel,2)-1
-        % Prediction step
-        x_predict = F * x;  % Predict next state
-        P_predict = F * P * F' + Q;  % Predict error covariance
+    % Initialize error covariance matrix as identity
+    P = 1000*eye(n_rows * n_cols);
 
-        % Update step (when measurement is available)
-        z_k = channel(k);  % Your measured value of the corrupted pixel
-        y = z_k - C * x_predict;  % Innovation
+    % State transition matrix (identity for simplicity)
+    F = eye(n_rows * n_cols);
 
-        % Kalman gain
-        K = P_predict * C' / (C * P_predict * C');
+    % Observation matrix
+    C = zeros(1, n_rows * n_cols);
+    C(half_n_rows * n_cols + half_n_cols + 1) = 1; % Center pixel observation
 
-        % Update state estimate
-        x = x_predict + K * y;
+    for k_row = 1 + half_n_rows:num_rows - half_n_rows
+        for k_col = 1 + half_n_cols:num_cols - half_n_cols
+            
+            if corrupted_pixels(k_row, k_col) == 1
+                estimated_channel(k_row, k_col) = C * x;
+            else
+            
+            % Extract the 2D window
+            window = channel((k_row - half_n_rows):(k_row + half_n_rows), ...
+                             (k_col - half_n_cols):(k_col + half_n_cols));
 
-        % Update covariance
-        P = (eye(size(P_predict)) - K * C) * P_predict;
+            % Prediction step
+            x_predict = F * x;  % Predict next state
+            P_predict = F * P * F' + Q;  % Predict error covariance
 
-        % Store results
-        if (corrupted_pixels(k)==1)
-            estimated_y(1, k) = y;
-        else 
-            estimated_y(1, k) = channel(1, k);
+            % Update step (when measurement is available)
+            z_k = window(half_n_rows + 1, half_n_cols + 1);  % Measured center pixel
+            y = z_k - C * x_predict;  % Innovation
+
+            % Kalman gain
+            K = P_predict * C' / (C * P_predict * C' + 1e-6);  % Add small value for numerical stability
+
+            % Update state estimate
+            x = x_predict + K * y;
+
+            % Update covariance
+            P = (eye(size(P_predict)) - K * C) * P_predict;
+
+            % Store results for corrupted pixels
+
+                estimated_channel(k_row, k_col) = channel(k_row, k_col);
+            end
         end
     end
-    estimated_y(1,1) = channel(1,1);
-    estimated_y(1,size(channel,2)) = channel(1,size(channel,2));
-    estimated_y = reshape(estimated_y, num_rows, num_cols);
+    
+    estimated_channel(1:half_n_rows, :) = channel(1:half_n_rows, :);
+    estimated_channel(end-half_n_rows+1:end, :) = channel(end-half_n_rows+1:end, :);
+    estimated_channel(:, 1:half_n_cols) = channel(:, 1:half_n_cols);
+    estimated_channel(:, end-half_n_cols+1:end) = channel(:, end-half_n_cols+1:end);
 end
+
+
 
 
