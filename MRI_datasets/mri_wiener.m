@@ -1,6 +1,6 @@
 %%
 functions = common_functions;
-image_idx = "1";
+image_idx = "5";
 [good_channel1, good_channel2, good_channel3] = functions.get_data(image_idx, 1);
 [bad_channel1, bad_channel2, bad_channel3] = functions.get_data(image_idx, 0);
 
@@ -52,57 +52,49 @@ title("K-space data for good channel 3")
 % Find the corrupted lines and replace them with the average of the lines
 % next to them
 functions = common_functions;
-image_idx = "1";
+image_idx = "4";
 [bad_channel1, bad_channel2, bad_channel3] = functions.get_data(image_idx, 0);
-fused_bad_channels = functions.fuse_channels_simple(bad_channel1, bad_channel2, bad_channel3);
+fused_bad_channels = functions.fuse_channels_wiener(bad_channel1, bad_channel2, bad_channel3);
 
-corrupted_pixels = functions.get_corrupted_pixels(fused_bad_channels, 0.9, 105);
+corrupted_lines = functions.get_corrupted_lines(fused_bad_channels, 0.9, 105);
+corrupted_pixels = functions.get_corrupted_pixels(bad_channel1, corrupted_lines1, -.6);
 cleaned_channels = clean_corrupted_pixels(fused_bad_channels, corrupted_pixels);
 
-window_dims = [3,3];
-[Rx, r_dx] = functions.get_Rx_rdx(fused_bad_channels, window_dims, corrupted_pixels, 1, size(fused_bad_channels));
-
-filtered_channels = wiener_filter(fused_bad_channels, corrupted_pixels, window_dims);
-piecewise_filtered_channels = piecewise_wiener_filter(fused_bad_channels, corrupted_pixels, window_dims, 16, 4);
-center_filtered_channels = center_piecewise_wiener_filter(fused_bad_channels, corrupted_pixels, window_dims, [128,64]);
+window_dims = [1,3];
+[Rx, r_dx] = functions.get_Rx_rdx(fused_bad_channels, window_dims, corrupted_pixels, 1, size(fused_bad_channels), 1);
+filtered_channels = mri_wiener(bad_channel1, bad_channel2, bad_channel3, corrupted_pixels, corrupted_pixels, corrupted_pixels, 1, "wiener", window_dims, "wiener", []);
+piecewise_filtered_channels = mri_wiener(bad_channel1, bad_channel2, bad_channel3, corrupted_pixels, corrupted_pixels, corrupted_pixels, 1, "wiener", window_dims, "piecewise", [16,4]);
+center_filtered_channels = mri_wiener(bad_channel1, bad_channel2, bad_channel3, corrupted_pixels, corrupted_pixels, corrupted_pixels, 1, "wiener", window_dims, "center_piecewise", [128,64]);
 
 %% Clean first, fuse second
 % Find the corrupted lines and replace them with the average of the lines
 % next to them
 functions = common_functions;
-image_idx = "2";
+image_idx = "1";
 [bad_channel1, bad_channel2, bad_channel3] = functions.get_data(image_idx, 0);
 fused_bad_channels = functions.fuse_channels_simple(bad_channel1, bad_channel2, bad_channel3);
 
-window_dims = [1,3];
+window_dims = [3,3];
 
-corrupted_pixels1 = functions.get_corrupted_pixels(bad_channel1, .9, 105);
-corrupted_pixels2 = functions.get_corrupted_pixels(bad_channel2, .9, 105);
-corrupted_pixels3 = functions.get_corrupted_pixels(bad_channel3, .9, 105);
+corrupted_lines1 = functions.get_corrupted_lines(bad_channel1, .9, 105);
+corrupted_lines2 = functions.get_corrupted_lines(bad_channel2, .9, 105);
+corrupted_lines3 = functions.get_corrupted_lines(bad_channel3, .9, 105);
+corrupted_pixels1 = functions.get_corrupted_pixels(bad_channel1, corrupted_lines1, 1.3);
+corrupted_pixels2 = functions.get_corrupted_pixels(bad_channel2, corrupted_lines2, 1.3);
+corrupted_pixels3 = functions.get_corrupted_pixels(bad_channel3, corrupted_lines3, 1.3);
 
 cleaned_channel1 = clean_corrupted_pixels(bad_channel1, corrupted_pixels1);
 cleaned_channel2 = clean_corrupted_pixels(bad_channel2, corrupted_pixels2);
 cleaned_channel3 = clean_corrupted_pixels(bad_channel3, corrupted_pixels3);
 cleaned_channels = functions.fuse_channels_wiener(cleaned_channel1, cleaned_channel2, cleaned_channel3);
 
-[Rx1, r_dx1] = functions.get_Rx_rdx(bad_channel1, window_dims, corrupted_pixels1, 1, size(fused_bad_channels));
-[Rx2, r_dx2] = functions.get_Rx_rdx(bad_channel2, window_dims, corrupted_pixels2, 1, size(fused_bad_channels));
-[Rx3, r_dx3] = functions.get_Rx_rdx(bad_channel3, window_dims, corrupted_pixels3, 1, size(fused_bad_channels));
+[Rx1, r_dx1] = functions.get_Rx_rdx(bad_channel1, window_dims, corrupted_pixels1, 1, size(fused_bad_channels), 1);
+[Rx2, r_dx2] = functions.get_Rx_rdx(bad_channel2, window_dims, corrupted_pixels2, 1, size(fused_bad_channels), 1);
+[Rx3, r_dx3] = functions.get_Rx_rdx(bad_channel3, window_dims, corrupted_pixels3, 1, size(fused_bad_channels), 1);
 
-filtered_channel1 = wiener_filter(bad_channel1, corrupted_pixels1, window_dims);
-filtered_channel2 = wiener_filter(bad_channel2, corrupted_pixels2, window_dims);
-filtered_channel3 = wiener_filter(bad_channel3, corrupted_pixels3, window_dims);
-filtered_channels = functions.fuse_channels_wiener(filtered_channel1, filtered_channel2, filtered_channel3);
-
-piecewise_filtered_channel1 = piecewise_wiener_filter(bad_channel1, corrupted_pixels1, window_dims, 7, 3);
-piecewise_filtered_channel2 = piecewise_wiener_filter(bad_channel2, corrupted_pixels2, window_dims, 7, 3);
-piecewise_filtered_channel3 = piecewise_wiener_filter(bad_channel3, corrupted_pixels3, window_dims, 7, 3);
-piecewise_filtered_channels = functions.fuse_channels_wiener(piecewise_filtered_channel1, piecewise_filtered_channel2, piecewise_filtered_channel3);
-
-center_filtered_channel1 = center_piecewise_wiener_filter(bad_channel1, corrupted_pixels1, window_dims, [256,64]);
-center_filtered_channel2 = center_piecewise_wiener_filter(bad_channel2, corrupted_pixels2, window_dims, [256,64]);
-center_filtered_channel3 = center_piecewise_wiener_filter(bad_channel3, corrupted_pixels3, window_dims, [256,64]);
-center_filtered_channels = functions.fuse_channels_wiener(center_filtered_channel1, center_filtered_channel2, center_filtered_channel3);
+filtered_channels = mri_wiener(bad_channel1, bad_channel2, bad_channel3, corrupted_pixels1, corrupted_pixels2, corrupted_pixels3, 0, "wiener", window_dims, "wiener", []);
+piecewise_filtered_channels = mri_wiener(bad_channel1, bad_channel2, bad_channel3, corrupted_pixels1, corrupted_pixels2, corrupted_pixels3, 0, "wiener", window_dims, "piecewise", [16,4]);
+center_filtered_channels = mri_wiener(bad_channel1, bad_channel2, bad_channel3, corrupted_pixels1, corrupted_pixels2, corrupted_pixels3, 0, "wiener", window_dims, "center_piecewise", [128,64]);
 
 
 %%
@@ -125,15 +117,16 @@ MSEs = [bad_img_MSE, cleaned_img_MSE, filtered_img_MSE, piecewise_filtered_img_M
 
 %% Plot images
 
-figure(1)
+figure(10)
 axis image, 
 colormap gray;
 axis off
 subplot(2,2,1)
-imagesc(cleaned_adj_img);
+imagesc(bad_adj_img);
 title("Fused and cleaned image")
 subplot(2,2,2)
-imagesc(filtered_adj_img);
+imagesc(filtered_a ...
+    dj_img);
 title("Wiener filtered image")
 subplot(2,2,3)
 imagesc(piecewise_filtered_adj_img);
@@ -142,7 +135,7 @@ subplot(2,2,4)
 imagesc(center_filtered_adj_img);
 title("Center Wiener filtered image")
 
-figure(2); 
+figure(8); 
 subplot(2,2,1)
 imagesc(100*log(abs(cleaned_channels)));
 title("Fused + cleaned k-space data")
@@ -161,9 +154,9 @@ bar(MSEs)
 
 figure(5)
 subplot(1,2,1)
-imagesc(abs(Rx))
+imagesc(abs(Rx),[0,2000])
 subplot(1,2,2)
-imagesc(abs(r_dx))
+imagesc(abs(r_dx),[1000,1500])
 
 figure(6)
 subplot(2,3,1)
@@ -180,15 +173,57 @@ subplot(2,3,6)
 imagesc(abs(r_dx3))
 
 figure(7)
-subplot(1,3,1)
+subplot(2,3,1)
+imagesc(100*log(abs(bad_channel1)))
+subplot(2,3,2)
+imagesc(100*log(abs(bad_channel2)))
+subplot(2,3,3)
+imagesc(100*log(abs(bad_channel3)))
+subplot(2,3,4)
 imagesc(corrupted_pixels1)
-subplot(1,3,2)
+subplot(2,3,5)
 imagesc(corrupted_pixels2)
-subplot(1,3,3)
+subplot(2,3,6)
 imagesc(corrupted_pixels3)
 
-
 %% Functions
+function filtered_channels = mri_wiener(channel1, channel2, channel3, cp1, cp2, cp3, fuse_first, fuse_type, window_dims, wiener_type, wiener_type_args)
+    functions = common_functions;
+
+    if (fuse_first == 1)
+        if (fuse_type == "simple")
+            channels = functions.fuse_channels_simple(channel1,channel2,channel3);
+        else
+            channels = functions.fuse_channels_wiener(channel1,channel2,channel3);
+        end
+        if (wiener_type == "wiener")
+            filtered_channels = wiener_filter(channels, cp1, window_dims);
+        elseif (wiener_type == "piecewise")
+            filtered_channels = piecewise_wiener_filter(channels, cp1, window_dims, wiener_type_args(1), wiener_type_args(2));
+        elseif (wiener_type == "center_piecewise")
+            filtered_channels = center_piecewise_wiener_filter(channels, cp1, window_dims, [wiener_type_args(1) wiener_type_args(2)]);
+        end
+    else
+        if (wiener_type == "wiener")
+            filtered_channel1 = wiener_filter(channel1, cp1, window_dims);
+            filtered_channel2 = wiener_filter(channel2, cp2, window_dims);
+            filtered_channel3 = wiener_filter(channel3, cp3, window_dims);
+        elseif (wiener_type == "piecewise")
+            filtered_channel1 = piecewise_wiener_filter(channel1, cp1, window_dims, wiener_type_args(1), wiener_type_args(2));
+            filtered_channel2 = piecewise_wiener_filter(channel2, cp2, window_dims, wiener_type_args(1), wiener_type_args(2));
+            filtered_channel3 = piecewise_wiener_filter(channel3, cp3, window_dims, wiener_type_args(1), wiener_type_args(2));
+        elseif (wiener_type == "center_piecewise")
+            filtered_channel1 = center_piecewise_wiener_filter(channel1, cp1, window_dims, [wiener_type_args(1), wiener_type_args(2)]);
+            filtered_channel2 = center_piecewise_wiener_filter(channel2, cp2, window_dims, [wiener_type_args(1), wiener_type_args(2)]);
+            filtered_channel3 = center_piecewise_wiener_filter(channel3, cp3, window_dims, [wiener_type_args(1), wiener_type_args(2)]);
+        end
+        if (fuse_type == "simple")
+            filtered_channels = functions.fuse_channels_simple(filtered_channel1,filtered_channel2,filtered_channel3);
+        else
+            filtered_channels = functions.fuse_channels_wiener(filtered_channel1,filtered_channel2,filtered_channel3);
+        end
+    end
+end
 
 function filtered_channel = center_piecewise_wiener_filter(channel, corrupted_pixels, window_dims, center_dims)
     functions = common_functions;
@@ -207,8 +242,8 @@ function filtered_channel = center_piecewise_wiener_filter(channel, corrupted_pi
     center_end_cols = center_start_cols + center_dims(2);
 
     % Calculate a separate Rx and r_dx for the center vs the edges
-    [Rx_center, r_dx_center] = functions.get_Rx_rdx(channel, window_dims, corrupted_pixels, 1, center_dims);
-    [Rx_edge, r_dx_edge] = functions.get_Rx_rdx(channel, window_dims, corrupted_pixels, 0, center_dims);
+    [Rx_center, r_dx_center] = functions.get_Rx_rdx(channel, window_dims, corrupted_pixels, 1, center_dims, 1);
+    [Rx_edge, r_dx_edge] = functions.get_Rx_rdx(channel, window_dims, corrupted_pixels, 0, center_dims, 1);
 
     % Calculate the optimal filter w
     w_center = inv(Rx_center)*r_dx_center;
@@ -285,7 +320,7 @@ function filtered_channel = wiener_filter(channel, corrupted_pixels, window_dims
     row_padding = (window_dims(1)-1)/2;
     col_padding = (window_dims(2)-1)/2;
     % Find the correlation matrix and cross correlations between d and x
-    [Rx, r_dx] = functions.get_Rx_rdx(channel, window_dims, corrupted_pixels, 1, size(channel));
+    [Rx, r_dx] = functions.get_Rx_rdx(channel, window_dims, corrupted_pixels, 1, size(channel), 1);
     % Calculate the optimal filter w
     w = inv(Rx)*r_dx;
     for row = 1+row_padding:size(channel,1)-row_padding
@@ -315,15 +350,3 @@ function cleaned_channel = clean_corrupted_pixels(channel, corrupted_pixels)
         end
     end
 end
-
-function padchan = pad_channel(x_pad, y_pad, chan)
-
-    y_dim = size(chan,1);
-    x_dim = size(chan,2);
-    x_padding = zeros(y_dim, x_pad);
-    y_padding = zeros (y_pad, x_dim+x_pad*2);
-
-    padchan = [x_padding, chan, x_padding];
-    padchan = [y_padding; padchan; y_padding];
-end
-

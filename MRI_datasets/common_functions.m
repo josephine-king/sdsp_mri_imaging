@@ -26,12 +26,10 @@ function [channel1, channel2, channel3] = get_data(slice_num, good_n_bad)
 
 end
 
-% Identifies the corrupted pixels. Returns a matrix with the same size as
-% channel. Corrupted pixels are 1, non corrupted are 0
-function corrupted_pixels1  = get_corrupted_pixels(channel, threshold1, threshold2)
+function corrupted_lines1 = get_corrupted_lines(channel, threshold1, threshold2)
     num_rows = size(channel,1);
     num_cols = size(channel,2);
-    corrupted_pixels = zeros(num_rows,num_cols);
+    corrupted_lines = zeros(num_rows,num_cols);
     row_ns = 3;
     col_ns = 1;
     for col = 1+col_ns:num_cols-col_ns
@@ -45,23 +43,81 @@ function corrupted_pixels1  = get_corrupted_pixels(channel, threshold1, threshol
             r = abs(Pm-P_this_col)/Pm;
  
             if (r > threshold1)
-                corrupted_pixels(row,col) = r;
+                corrupted_lines(row,col) = r;
             end
         end
-        if (norm(corrupted_pixels(:,col),1) > threshold2)
-            lower = 1;%round(size(corrupted_pixels,1)/8);
-            upper = size(corrupted_pixels,1);%round(7*size(corrupted_pixels,1)/8);
-            corrupted_pixels(:,col) = zeros(size(corrupted_pixels,1),1);
-            corrupted_pixels(lower:upper,col) = ones(upper-lower+1,1);
+        if (norm(corrupted_lines(:,col),1) > threshold2)
+            corrupted_lines(:,col) = ones(size(corrupted_lines,1),1);
         else
-            corrupted_pixels(:,col) = zeros(size(corrupted_pixels,1),1);
+            corrupted_lines(:,col) = zeros(size(corrupted_lines,1),1);
         end
     end
 
-    corrupted_pixels1 = zeros(num_rows,num_cols);
-    corrupted_lines = [6,22,38,54,70,86,102,118];
-    for idx = 1:length(corrupted_lines)
-        corrupted_pixels1(:,corrupted_lines(idx)) = ones(512,1);
+    corrupted_lines1 = zeros(num_rows,num_cols);
+    corrupted_line_nums = [6,22,38,54,70,86,102,118];
+    for idx = 1:length(corrupted_line_nums)
+        corrupted_lines1(:,corrupted_line_nums(idx)) = ones(512,1);
+    end
+end
+
+% Identifies the corrupted pixels. Returns a matrix with the same size as
+% channel. Corrupted pixels are 1, non corrupted are 0
+function corrupted_pixels_out  = get_corrupted_pixels(channel, corrupted_lines, threshold)
+    num_rows = size(channel,1);
+    num_cols = size(channel,2);
+    corrupted_pixels = zeros(num_rows,num_cols);
+    row_ns = 3;
+    col_ns = 1;
+    rs = [];
+    for col = 1+col_ns:num_cols-col_ns
+        for row = 1+row_ns:num_rows-row_ns
+            left_col = channel(row-row_ns:row+row_ns,col-1);
+            this_col = channel(row-row_ns:row+row_ns,col);
+            right_col = channel(row-row_ns:row+row_ns,col+1);
+            P_left = mean(abs(left_col).^2);
+            P_this_col = mean(abs(this_col).^2);
+            P_right = mean(abs(right_col).^2);
+            P_avg = (P_left+P_right)/2;
+
+            r = abs(abs(P_avg-P_this_col))/((P_left+P_right+P_this_col)/3);
+            r2 = abs(abs(P_avg-P_this_col))/P_this_col;
+            %r1 = mean(abs(P_this_col-P_left+P_this_col-P_right))/P_avg;
+            %r2 = mean(abs(P_this_col-P_left+P_this_col-P_right))/P_this_col;
+            %r = max(r1,r2);
+            rs(row,col) = r;
+
+        end
+    end
+    v_rs = reshape(rs,1,[]);
+    avg = mean(v_rs);
+    std_dev = std(v_rs);
+
+    for col = 1+col_ns:num_cols-col_ns
+        if (corrupted_lines(1,col) ~= 1)
+            continue;
+        end
+        for row = 1+row_ns:num_rows-row_ns
+            if (rs(row,col) >= avg+threshold*std_dev)
+                corrupted_pixels(row,col) = 1;
+            end
+        end
+    end
+
+    row_ns = 3;
+    % clean the top and bottom pixels
+    corrupted_pixels_out = corrupted_pixels;
+    corrupted_pixels_out(1:row_ns,:) = zeros(row_ns,num_cols);
+    corrupted_pixels_out(num_rows-row_ns+1:num_rows,:) = zeros(row_ns,num_cols);
+    % clean up the pixels. corruptions occur in short-ish lines
+    for col = 1:num_cols
+        if (corrupted_lines(1,col) ~= 1)
+            continue;
+        end
+        for row = 1+row_ns:num_rows-row_ns
+            if (norm(corrupted_pixels(row-row_ns:row+row_ns, col),1) < row_ns*2+1)
+                corrupted_pixels_out(row,col) = 0;
+            end
+        end
     end
 end
 
@@ -133,7 +189,7 @@ end
 % ---------------------------------------------------------------------
 % Statistical estimation functions
 % ---------------------------------------------------------------------
-function [Rx, r_dx] = get_Rx_rdx(channel, window_dims, corrupted_pixels, center_n_edge, center_dims, omit_corrupted_col)
+function [Rx, r_dx] = get_Rx_rdx(channel, window_dims, corrupted_pixels, center_n_edge, center_dims, omit_corrupted_pixel)
     
     window_rows = window_dims(1);
     window_cols = window_dims(2);
@@ -182,7 +238,7 @@ function [Rx, r_dx] = get_Rx_rdx(channel, window_dims, corrupted_pixels, center_
          
             m = channel(window_start_rows:window_end_rows, window_start_cols:window_end_cols);
             d = m(round((window_rows + 1) / 2), round((window_cols + 1) / 2));
-            if (omit_corrupted_col)
+            if (omit_corrupted_pixel)
                 m(:, round((window_cols + 1) / 2)) = []; 
             end
             v = reshape(m, [], 1);
@@ -199,7 +255,7 @@ function [Rx, r_dx] = get_Rx_rdx(channel, window_dims, corrupted_pixels, center_
             R = v * ctranspose(v);
             col_Rs = [col_Rs, reshape(R, [], 1)];
 
-            % Check if there are any corrupted pixels before computing Rx
+            % Check if there are any corrupted pixels before computing r_dx
             if (any(corrupted_pixels(window_row_range, window_col_range), 'all'))
                 window_start_cols = window_start_cols + 1; 
                 continue; 
@@ -222,9 +278,8 @@ function [Rx, r_dx] = get_Rx_rdx(channel, window_dims, corrupted_pixels, center_
 
     r_dx = mean(row_rdx, 2);
     Rx = mean(row_Rs, 2);
-    R_rows = window_rows*window_cols-omit_corrupted_col*window_rows;
-    R_cols = window_rows*window_cols-omit_corrupted_col*window_rows;
-    Rx = reshape(Rx, R_rows, R_cols);
+    R_dim = window_rows*window_cols-omit_corrupted_pixel*window_rows;
+    Rx = reshape(Rx, R_dim, R_dim);
 end
 
 function [var_v, var_c] = calculate_variance(channel, noise_img_frac)
@@ -307,6 +362,17 @@ function adj_img = adjust_image(img, fused)
     adj_img = uint16(adj_img * 65536 / thresh); 
 end
 
+% Pad the k-space data with zeroes
+function padchan = pad_channel(x_pad, y_pad, chan)
+
+    y_dim = size(chan,1);
+    x_dim = size(chan,2);
+    x_padding = zeros(y_dim, x_pad);
+    y_padding = zeros (y_pad, x_dim+x_pad*2);
+
+    padchan = [x_padding, chan, x_padding];
+    padchan = [y_padding; padchan; y_padding];
+end
 
 end
 end
