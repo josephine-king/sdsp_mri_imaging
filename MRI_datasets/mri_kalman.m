@@ -1,71 +1,34 @@
-functions = common_functions;
+function filtered_channels = mri_kalman(channel1, channel2, channel3, cp1, cp2, cp3, fuse_first, fuse_type, kalman_dims)
+    functions = common_functions;
+    if (fuse_first == 1)
+        if (fuse_type == "simple")
+            channels = functions.fuse_channels_simple(channel1,channel2,channel3);
+        else
+            channels = functions.fuse_channels_wiener(channel1,channel2,channel3);
+        end
+        variance = functions.calculate_variance(channels,1/16);
+        Q = variance*eye(kalman_dims(1)*kalman_dims(2));
+        filtered_channels = kalman_filter_2d(channels, cp1, Q, kalman_dims);
+    else
+        variance = functions.calculate_variance(channel1,1/16);
+        Q = variance*eye(kalman_dims(1)*kalman_dims(2));
+        filtered_channel1 = kalman_filter_2d(channel1, cp1, Q, kalman_dims);
 
-[bad_channel1, bad_channel2, bad_channel3] = functions.get_data("1", 0);
-bad_channel = functions.fuse_channels_wiener(bad_channel1, bad_channel2, bad_channel3);
-corrupted_lines1 = functions.get_corrupted_lines(bad_channel1, .9, 105);
-corrupted_lines2 = functions.get_corrupted_lines(bad_channel2, .9, 105);
-corrupted_lines3 = functions.get_corrupted_lines(bad_channel3, .9, 105);
-corrupted_pixels1 = functions.get_corrupted_pixels(bad_channel1, corrupted_lines1, 1.3);
-corrupted_pixels2 = functions.get_corrupted_pixels(bad_channel2, corrupted_lines2, 1.3);
-corrupted_pixels3 = functions.get_corrupted_pixels(bad_channel3, corrupted_lines3, 1.3);
+        variance = functions.calculate_variance(channel2,1/16);
+        Q = variance*eye(kalman_dims(1)*kalman_dims(2));
+        filtered_channel2 = kalman_filter_2d(channel2, cp2, Q, kalman_dims);
 
-kalman_n_rows = 3;
-kalman_n_cols = 3;
-kalman_dims = [kalman_n_rows,kalman_n_cols];
+        variance = functions.calculate_variance(channel3,1/16);
+        Q = variance*eye(kalman_dims(1)*kalman_dims(2));
+        filtered_channel3 = kalman_filter_2d(channel3, cp3, Q, kalman_dims);
 
-variance = functions.calculate_variance(bad_channel1,1/16);
-Q1 = variance*eye(kalman_n_rows*kalman_n_cols);
-estimated_channel1 = kalman_filter_2d(bad_channel1, corrupted_pixels1, Q1, kalman_dims);
-
-variance = functions.calculate_variance(bad_channel2,1/16);
-Q2 = variance*eye(kalman_n_rows*kalman_n_cols);
-estimated_channel2 = kalman_filter_2d(bad_channel2, corrupted_pixels2, Q2, kalman_dims);
-
-variance = functions.calculate_variance(bad_channel3,1/16);
-Q3 = variance*eye(kalman_n_rows*kalman_n_cols);
-estimated_channel3 = kalman_filter_2d(bad_channel3, corrupted_pixels3, Q3, kalman_dims);
-
-fused_estimated_channels = functions.fuse_channels_wiener(estimated_channel1, estimated_channel2, estimated_channel3);
-fused_estimated_channels = functions.pad_channel(64, 256, fused_estimated_channels);
-
-bad_img = functions.get_image(bad_channel);
-bad_adj_img = functions.adjust_image(bad_img, 1);
-
-corr_img = functions.get_image(fused_estimated_channels);
-corr_adj_img = functions.adjust_image(corr_img, 1);
-
-%%
-figure(3)
-axis image, 
-colormap gray;
-axis off
-subplot(1,2,1)
-imagesc(bad_adj_img);
-subplot(1,2,2)
-imagesc(corr_adj_img);
-title("Good image, fusion after IFFT")
-
-figure(2)
-subplot(1,2,1)
-imagesc(100*log(abs(bad_channel)));
-subplot(1,2,2)
-imagesc(100*log(abs(fused_estimated_channels)));
-title("Good image, fusion after IFFT")
-
-figure(1)
-subplot(2,3,1)
-imagesc(100*log(abs(bad_channel1)))
-subplot(2,3,2)
-imagesc(100*log(abs(bad_channel2)))
-subplot(2,3,3)
-imagesc(100*log(abs(bad_channel3)))
-subplot(2,3,4)
-imagesc(corrupted_pixels1)
-subplot(2,3,5)
-imagesc(corrupted_pixels2)
-subplot(2,3,6)
-imagesc(corrupted_pixels3)
-%%
+        if (fuse_type == "simple")
+            filtered_channels = functions.fuse_channels_simple(filtered_channel1,filtered_channel2,filtered_channel3);
+        else
+            filtered_channels = functions.fuse_channels_wiener(filtered_channel1,filtered_channel2,filtered_channel3);
+        end
+    end
+end
 
 function estimated_channel = kalman_filter_2d(channel, corrupted_pixels, Q, dims)
     n_rows = dims(1);

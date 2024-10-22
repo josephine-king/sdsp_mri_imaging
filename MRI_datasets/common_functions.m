@@ -80,17 +80,19 @@ function corrupted_pixels_out  = get_corrupted_pixels(channel, corrupted_lines, 
             P_avg = (P_left+P_right)/2;
 
             r = abs(abs(P_avg-P_this_col))/((P_left+P_right+P_this_col)/3);
-            r2 = abs(abs(P_avg-P_this_col))/P_this_col;
             %r1 = mean(abs(P_this_col-P_left+P_this_col-P_right))/P_avg;
             %r2 = mean(abs(P_this_col-P_left+P_this_col-P_right))/P_this_col;
             %r = max(r1,r2);
             rs(row,col) = r;
-
         end
     end
     v_rs = reshape(rs,1,[]);
     avg = mean(v_rs);
     std_dev = std(v_rs);
+    % Apply a Tukey window to r_s - attenuate the r_s at higher
+    % frequencies, as these are less likely to be corrupted
+    w = common_functions.get_window("tukeywin", [0.4,0.1], size(rs));
+    rs = rs.*w;
 
     for col = 1+col_ns:num_cols-col_ns
         if (corrupted_lines(1,col) ~= 1)
@@ -297,6 +299,10 @@ end
 % Image processing functions 
 % ---------------------------------------------------------------------
 % Obtain the image from 3 channels of k-space data using IFFT
+function img = get_image_no_mse(channels)
+    img = common_functions.get_image(channels);
+    img = common_functions.adjust_image(img,1);
+end
 
 function [img, MSE] = get_image_and_mse(channels, true_img)
     img = common_functions.get_image(channels);
@@ -372,6 +378,53 @@ function padchan = pad_channel(x_pad, y_pad, chan)
 
     padchan = [x_padding, chan, x_padding];
     padchan = [y_padding; padchan; y_padding];
+end
+
+% Average filter 
+function average_filtered_channels = average_filter(channel, corrupted_pixels)
+    average_filtered_channels = channel;
+    for row = 1:size(channel,1)
+        for col = 1:size(channel,2)
+            if (corrupted_pixels(row, col) == 1)
+                average_filtered_channels(row, col) = 0.5*(channel(row,col-1)+channel(row,col+1));
+            end
+        end
+    end
+end
+
+% Apply a smoothing window to the data. Supports hamming and tukey windows
+% alg: "hamming" or "tukeywin"
+% alg_tune: for hamming, this can be "periodic" or "symmetric". For
+% tukeywin, choose a value between 0 and 1. For a value of 1, it's
+% effectively a hamming window. 
+function w = get_window(alg, alg_tune, dims)
+    y_dim = dims(1);
+    x_dim = dims(2);
+
+    if (alg == "hamming")
+        w = hamming(y_dim, alg_tune(1))*hamming(x_dim, alg_tune(2))';
+    elseif (alg == "tukeywin")
+        w = tukeywin(y_dim, alg_tune(1))*tukeywin(x_dim, alg_tune(2))';
+    end
+end
+
+function fixed_channel = remove_corrupted_lines(channel, corrupted_lines, zero_fill)
+    if (zero_fill) 
+        fixed_channel = channel;
+    else
+        fixed_channel = [];
+    end
+    for i = 1:size(corrupted_lines,2)
+        if (corrupted_lines(:,i) == ones(size(corrupted_lines,1),1))
+            if (zero_fill)
+                fixed_channel(:,i) = zeros(size(corrupted_lines,1),1);
+            end
+        else
+            if (~zero_fill)
+                fixed_channel = [fixed_channel, channel(:,i)];
+            end
+        end
+    end
 end
 
 end

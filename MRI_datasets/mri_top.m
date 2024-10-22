@@ -4,6 +4,13 @@ image_idx = "1";
 [good_channel1, good_channel2, good_channel3] = functions.get_data(image_idx, 1);
 [bad_channel1, bad_channel2, bad_channel3] = functions.get_data(image_idx, 0);
 
+corrupted_lines1 = functions.get_corrupted_lines(bad_channel1, .9, 105);
+corrupted_lines2 = functions.get_corrupted_lines(bad_channel2, .9, 105);
+corrupted_lines3 = functions.get_corrupted_lines(bad_channel3, .9, 105);
+corrupted_pixels1 = functions.get_corrupted_pixels(bad_channel1, corrupted_lines1, .7);
+corrupted_pixels2 = functions.get_corrupted_pixels(bad_channel2, corrupted_lines2, .7);
+corrupted_pixels3 = functions.get_corrupted_pixels(bad_channel3, corrupted_lines3, .7);
+
 %% Channel fusion
 % Fuse channels 
 simple_fused_good_channels = functions.fuse_channels_simple(good_channel1, good_channel2, good_channel3);
@@ -71,10 +78,6 @@ imagesc(100*log(abs(bad_channel1)));
 title("Bad k-space data, image 1")
 
 %% Simple filters
-corrupted_lines1 = functions.get_corrupted_lines(bad_channel1, 0.9, 105);
-corrupted_lines2 = functions.get_corrupted_lines(bad_channel2, 0.9, 105);
-corrupted_lines3 = functions.get_corrupted_lines(bad_channel3, 0.9, 105);
-
 % Remove the corrupted lines
 zeroed_channel1 = functions.remove_corrupted_lines(bad_channel1, corrupted_lines1, 1);
 zeroed_channel2 = functions.remove_corrupted_lines(bad_channel2, corrupted_lines2, 1);
@@ -101,9 +104,9 @@ pad_channel3 = functions.pad_channel(64, 256, bad_channel3);
 padded_channels = functions.fuse_channels_wiener(pad_channel1,pad_channel2,pad_channel3);
 
 % Average neighboring pixels
-average_filtered_channel1 = functions.average_filter(bad_channel1, corrupted_pixels1);
-average_filtered_channel2 = functions.average_filter(bad_channel2, corrupted_pixels2);
-average_filtered_channel3 = functions.average_filter(bad_channel3, corrupted_pixels3);
+average_filtered_channel1 = functions.average_filter(bad_channel1, corrupted_lines1);
+average_filtered_channel2 = functions.average_filter(bad_channel2, corrupted_lines2);
+average_filtered_channel3 = functions.average_filter(bad_channel3, corrupted_lines3);
 average_filtered_channels = functions.fuse_channels_wiener(average_filtered_channel1, average_filtered_channel2, average_filtered_channel3);
 
 % Removed corrupted lines
@@ -159,7 +162,7 @@ window_dims = [3,3];
 
 fused_bad_channels = functions.fuse_channels_wiener(bad_channel1, bad_channel2, bad_channel3);
 corrupted_lines = functions.get_corrupted_lines(fused_bad_channels, 0.9, 105);
-corrupted_pixels = functions.get_corrupted_pixels(bad_channel1, corrupted_lines, -.6);
+corrupted_pixels = functions.get_corrupted_pixels(fused_bad_channels, corrupted_lines, -.6);
 
 [Rx, r_dx] = functions.get_Rx_rdx(fused_bad_channels, window_dims, corrupted_pixels, 1, size(fused_bad_channels), 1);
 filtered_channels = mri_wiener(bad_channel1, bad_channel2, bad_channel3, corrupted_pixels, corrupted_pixels, corrupted_pixels, 1, "wiener", window_dims, "wiener", []);
@@ -169,14 +172,7 @@ center_filtered_channels = mri_wiener(bad_channel1, bad_channel2, bad_channel3, 
 %% Wiener filter first, fuse second
 % Find the corrupted lines and replace them with the average of the lines
 % next to them
-window_dims = [3,3];
-
-corrupted_lines1 = functions.get_corrupted_lines(bad_channel1, .9, 105);
-corrupted_lines2 = functions.get_corrupted_lines(bad_channel2, .9, 105);
-corrupted_lines3 = functions.get_corrupted_lines(bad_channel3, .9, 105);
-corrupted_pixels1 = functions.get_corrupted_pixels(bad_channel1, corrupted_lines1, 1.3);
-corrupted_pixels2 = functions.get_corrupted_pixels(bad_channel2, corrupted_lines2, 1.3);
-corrupted_pixels3 = functions.get_corrupted_pixels(bad_channel3, corrupted_lines3, 1.3);
+window_dims = [1,3];
 
 [Rx1, r_dx1] = functions.get_Rx_rdx(bad_channel1, window_dims, corrupted_pixels1, 1, size(fused_bad_channels), 1);
 [Rx2, r_dx2] = functions.get_Rx_rdx(bad_channel2, window_dims, corrupted_pixels2, 1, size(fused_bad_channels), 1);
@@ -204,7 +200,7 @@ colormap gray;
 axis off
 subplot(2,2,1)
 imagesc(bad_adj_img);
-title("Fused and cleaned image")
+title("Original image")
 subplot(2,2,2)
 imagesc(wiener_filtered_adj_img);
 title("Wiener filtered image")
@@ -233,6 +229,59 @@ figure(4)
 bar(MSEs)
 
 figure(7)
+subplot(2,3,1)
+imagesc(100*log(abs(bad_channel1)))
+subplot(2,3,2)
+imagesc(100*log(abs(bad_channel2)))
+subplot(2,3,3)
+imagesc(100*log(abs(bad_channel3)))
+subplot(2,3,4)
+imagesc(corrupted_pixels1)
+subplot(2,3,5)
+imagesc(corrupted_pixels2)
+subplot(2,3,6)
+imagesc(corrupted_pixels3)
+
+%% Kalman filtering 
+
+kalman_dims = [1,3];
+
+kalman_filtered_fuse_first_channels = mri_kalman(bad_channel1, bad_channel2, bad_channel3, corrupted_pixels1, corrupted_pixels2, corrupted_pixels3, 1, "wiener", kalman_dims);
+kalman_filtered_fuse_second_channels = mri_kalman(bad_channel1, bad_channel2, bad_channel3, corrupted_pixels1, corrupted_pixels2, corrupted_pixels3, 0, "wiener", kalman_dims);
+
+% Unfiltered image
+[bad_adj_img, bad_img_MSE] = functions.get_image_and_mse_nonfused(bad_channel1,bad_channel2,bad_channel3, good_adj_img);
+% Kalman filtered image (fuse first):
+[kalman_filtered_fuse_first_adj_img, kalman_filtered_fuse_first_MSE] = functions.get_image_and_mse(kalman_filtered_fuse_first_channels,good_adj_img);
+% Kalman filtered image (fuse second):
+[kalman_filtered_fuse_second_adj_img, kalman_filtered_fuse_second_MSE] = functions.get_image_and_mse(kalman_filtered_fuse_second_channels,good_adj_img);
+
+figure(3)
+axis image, 
+colormap gray;
+axis off
+subplot(1,3,1)
+imagesc(bad_adj_img);
+title("Original image")
+subplot(1,3,2)
+imagesc(kalman_filtered_fuse_first_adj_img);
+title("Kalman filtered image, fusion before filtering")
+subplot(1,3,3)
+imagesc(kalman_filtered_fuse_second_adj_img);
+title("Kalman filtered image, fusion after filtering")
+
+figure(2)
+subplot(1,3,1)
+imagesc(100*log(abs(bad_channel1)));
+title("Original kspace")
+subplot(1,3,2)
+imagesc(100*log(abs(kalman_filtered_fuse_first_channels)));
+title("Kalman filtered kspace, fusion before filtering")
+subplot(1,3,3)
+imagesc(100*log(abs(kalman_filtered_fuse_second_channels)));
+title("Kalman filtered kspace, fusion after filtering")
+
+figure(1)
 subplot(2,3,1)
 imagesc(100*log(abs(bad_channel1)))
 subplot(2,3,2)
