@@ -1,120 +1,90 @@
-%% Script to translate the K-spcae images into spatial eye images
-clc; clear all; close all;
+functions = common_functions;
+image_idx = "1";
+[good_channel1, good_channel2, good_channel3] = functions.get_data(image_idx, 1);
 
-%% Produce 4 images using different methods: 
-% Simple IFFT, filtering + interpolation, and compressed sensing, 
-% and compressed sensing + filtering + interpolation
+fused_channels = functions.fuse_channels_wiener(good_channel1, good_channel2, good_channel3);
 
-% Simple IFFT
-% Get the good/bad data for the slice
-[channel1, channel2, channel3] = get_data("1", 0);
-% IFFT with no filtering
-raw_image = get_image(channel1, channel2, channel3);
-% Do some post processing on the image
-raw_adj_img = adjust_image(raw_image);
-
-% Filtering and interpolation 
-% Pad the edges of the k-space with 0 (interpolation)
-pad_channel1 = pad_channel(20, 80, channel1);
-pad_channel2 = pad_channel(20, 80, channel2);
-pad_channel3 = pad_channel(20, 80, channel3);
-% Apply a smoothing window (effectively a low pass filter). Either hamming or tukeywin
-w = get_window("tukeywin", .9, size(pad_channel1));
-smoothed_channel1 = smooth_channel(pad_channel1, w);
-smoothed_channel2 = smooth_channel(pad_channel2, w);
-smoothed_channel3 = smooth_channel(pad_channel3, w);
-% IFFT of filtered k-space data
-filtered_img = get_image(smoothed_channel1, smoothed_channel2, smoothed_channel3);
-% Post processing 
-filtered_adj_img = adjust_image(filtered_img);
-
-% Compressed sensing
-% Take a subsampling of y to perform compressed sensing
-%[n, C, y] = get_sparse_measurement(channel1, 10, "radial", [30,50]);
-[n, C, y] = get_sparse_measurement(channel1, 500, "center", []);
-%[n, C, y] = get_sparse_measurement(channel1, 10, "spiral", [300,100000,25]);
-%[n, C, y] = get_sparse_measurement(channel1, 10, "sparse", [500]);
+% Sparsity factor - how much we are reducting the original measurement size
+f = 10;
+n = size(fused_channels,1)*size(fused_channels,2);
+error = 50;
 
 % Solve convex optimization problem for compressed sensing to get the
 % sparse vector s
-s = compressed_sensing(n, C, y, 50);
-s = reshape(s, size(channel1,1), size(channel1,2));
-filtered_s = get_image(s, s, s);
-filtered_adj_s = adjust_image(filtered_s);
-
-% Compressed sensing + filtering + interpolation
-pad_s = pad_channel(20, 80, s);
-w = get_window("tukeywin", .9, size(pad_s));
-smoothed_s = smooth_channel(pad_s, w);
-filtered_s2 = get_image(smoothed_s, smoothed_s, smoothed_s);
-filtered_adj_s2 = adjust_image(filtered_s2);
+%%
+[C_radial, s_radial] = compressed_sensing(fused_channels, f, "radial", [30,50], error);
+%%
+[C_center, s_center] = compressed_sensing(fused_channels, f, "center", [], error);
+%%
+[C_spiral, s_spiral] = compressed_sensing(fused_channels, f, "spiral", [300,100000,25], error);
+%%
+[C_sparse, s_sparse] = compressed_sensing(fused_channels, f, "sparse", [500], error);
 
 
-%% Plot the images
+%% Get smaller C matrices for plotting
+C_radial_plot = radial_matrix(6552/4,65536/8,30,10);
+C_center_plot = center_matrix(6552/4,65536/8);
+C_spiral_plot = spiral_matrix(6552/4,65536/8, 300, 100000, 25);
+C_sparse_plot = sparse_matrix(6552/4,65536/8, 6552/4*500);
 
-close all
-figure(1); 
+%%
+good_img = functions.get_image(fused_channels);
+good_adj_img = functions.adjust_image(good_img, 1);
+[radial_img, radial_MSE] = functions.get_image_and_mse(s_radial, good_adj_img);
+[center_img, center_MSE] = functions.get_image_and_mse(s_center, good_adj_img);
+[spiral_img, spiral_MSE] = functions.get_image_and_mse(s_spiral, good_adj_img);
+[sparse_img, sparse_MSE] = functions.get_image_and_mse(s_sparse, good_adj_img);
+
+%% Plotting
+
+figure (1)
+subplot(1,4,1)
+imagesc(100*log(abs(s_radial)));
+title("K-space resulting from radial PSF")
+subplot(1,4,2)
+imagesc(100*log(abs(s_center)));
+title("K-space resulting from center PSF")
+subplot(1,4,3)
+imagesc(100*log(abs(s_spiral)));
+title("K-space resulting from spiral PSF")
+subplot(1,4,4)
+imagesc(100*log(abs(s_sparse)));
+title("K-space resulting from sparse PSF")
+%%
+figure (2)
 axis image, 
 colormap gray;
 axis off
-
-subplot(2,2,1)
-imagesc(raw_adj_img(:,:,1));
-subplot(2,2,2)
-imagesc(filtered_adj_img(:,:,1));
-subplot(2,2,3)
-imagesc(filtered_adj_s(:,:,1));
-subplot(2,2,4)
-imagesc(filtered_adj_s(:,:,1));
-
-%% Plot the k-space data
-% Spatial frequency observations
-figure(2); 
-xlabel('Horizontal frequency bins')
-ylabel('Vertical frequency bins');
-subplot(2,2,1)
-imagesc(100*log(abs(channel1)));
-subplot(2,2,2)
-imagesc(100*log(abs(smoothed_channel1)));
-subplot(2,2,3)
-imagesc(100*log(abs(s)));
-subplot(2,2,4)
-imagesc(100*log(abs(smoothed_s)));
-
-figure(4); 
-subplot(1,2,1)
-imagesc(w);
-subplot(1,2,2)
-imagesc(C);
+subplot(1,4,1)
+imagesc(radial_img);
+title("Image resulting from radial PSF")
+subplot(1,4,2)
+imagesc(center_img);
+title("Image resulting from center PSF")
+subplot(1,4,3)
+imagesc(spiral_img);
+title("Image resulting from spiral PSF")
+subplot(1,4,4)
+imagesc(sparse_img);
+title("Image resulting from sparse PSF")
+%%
+figure (3)
+subplot(1,4,1)
+imagesc(C_radial_plot);
+title("Radial PSF")
+subplot(1,4,2)
+imagesc(C_center_plot);
+title("Center PSF")
+subplot(1,4,3)
+imagesc(C_spiral_plot);
+title("Spiral PSF")
+subplot(1,4,4)
+imagesc(C_sparse_plot);
+title("Sparse PSF")
 
 %% Functions
 
-% Loads the data from slice slice_num
-% If good_n_bad is 1, it will load the good data. Otherwise it'll load the
-% bad data. The three channels are stored in [channel1, channel2, channel3]
-function [channel1, channel2, channel3] = get_data(slice_num, good_n_bad)
-
-    if (good_n_bad == 1)
-        good_str = 'Good';
-    else 
-        good_str = 'Bad';
-    end
-    load(strcat('MRI_datasets/Slice',slice_num,'/',good_str,'Data/slice',slice_num,'_channel1.mat'));
-    load(strcat('MRI_datasets/Slice',slice_num,'/',good_str,'Data/slice',slice_num,'_channel2.mat'));
-    load(strcat('MRI_datasets/Slice',slice_num,'/',good_str,'Data/slice',slice_num,'_channel3.mat'));
-    
-    if (good_n_bad == 1)
-        good_str = 'good';
-    else 
-        good_str = 'bad';
-    end
-    channel1 = eval(strcat('slice',slice_num,'_channel1_',good_str,'Data'));
-    channel2 = eval(strcat('slice',slice_num,'_channel2_',good_str,'Data'));
-    channel3 = eval(strcat('slice',slice_num,'_channel3_',good_str,'Data'));
-
-end
-
-function [n, C, y] = get_sparse_measurement(chan, n_over_p, psf, psf_settings);
+function [C, s] = compressed_sensing(chan, n_over_p, psf, psf_settings, error)
     n = size(chan,1) * size(chan,2);
     kspace = reshape(chan, n, 1);
     p = round(n/(n_over_p));
@@ -129,93 +99,16 @@ function [n, C, y] = get_sparse_measurement(chan, n_over_p, psf, psf_settings);
     end
 
     y = C*kspace;
-end
-
-function s = compressed_sensing(n, C, y, error)
     C = double(C);
     y = double(y);
     cvx_begin;
         variable s(n) complex;
         minimize(norm(s,1));
         subject to 
-            norm(C*s - y, 2) < error;
+            norm(C*s - y, 2) <= error;
     cvx_end;
-end
-
-% Pad the k-space data with zeroes
-function padchan = pad_channel(x_pad, y_pad, chan)
-
-    y_dim = size(chan,1);
-    x_dim = size(chan,2);
-    x_padding = zeros(y_dim, x_pad);
-    y_padding = zeros (y_pad, x_dim+x_pad*2);
-
-    padchan = [x_padding, chan, x_padding];
-    padchan = [y_padding; padchan; y_padding];
-end
-
-% Apply a smoothing window to the data. Supports hamming and tukey windows
-% alg: "hamming" or "tukeywin"
-% alg_tune: for hamming, this can be "periodic" or "symmetric". For
-% tukeywin, choose a value between 0 and 1. For a value of 1, it's
-% effectively a hamming window. 
-function w = get_window(alg, alg_tune, dims)
-    y_dim = dims(1);
-    x_dim = dims(2);
-
-    if (alg == "hamming")
-        w = hamming(y_dim, alg_tune)*hamming(x_dim, alg_tune)';
-    elseif (alg == "tukeywin")
-        w = tukeywin(y_dim, alg_tune)*tukeywin(x_dim, alg_tune)';
-    end
-end
-
-function smooth_chan = smooth_channel(chan, w)
-    smooth_chan = chan.*w;
-end
-
-% Obtain the image from the k-space data using IFFT
-function img = get_image(chan1, chan2, chan3)
-    img(:,:,1) = ifftshift(ifft2(chan1),1);
-    img(:,:,2) = ifftshift(ifft2(chan2),1);
-    img(:,:,3) = ifftshift(ifft2(chan3),1);
-end
-
-% Do some post processing on the image
-function adj_img = adjust_image(img)
-    % clear compensation, preparation, based on fourier transformed blinked 
-    % k-space data (Data_raw)
-    clear_comp = linspace(10,0.1,size(img,2)).^2; 
-    clear_matrix = repmat(clear_comp,[size(img,1) 1]);
-
-    % combine 3 channels sum of squares and add clear compensation
-    adj_img  = sqrt( abs(squeeze(img(:,:,1))).^2 + ...
-                     abs(squeeze(img(:,:,2))).^2 + ...
-                     abs(squeeze(img(:,:,3))).^2).* clear_matrix;  
     
-    % crop images because we are only interested in eye 
-    dims = size(adj_img(:,:,1));
-    y_dim = dims(1);
-    x_dim = dims(2);
-    lower_y_bound = (y_dim - x_dim)/2;
-    upper_y_bound = lower_y_bound + x_dim;
-    crop_y = [lower_y_bound : upper_y_bound]; % crop coordinates
-    adj_img = adj_img(crop_y, :);
-    adj_img_dims = size(adj_img);
-
-    %image
-    adj_img = reshape(squeeze(adj_img(:,:)),[adj_img_dims(1) adj_img_dims(2)]); 
-
-    % For better visualization and contrast of the eye images, histogram based
-    % compensation will be done 
-    std_within = 0.995; 
-    % set maximum intensity to contain 99.5 % of intensity values per image
-    [aa, val] = hist(adj_img(:),linspace(0,max(...
-                                      adj_img(:)),1000));
-        thresh = val(find(cumsum(aa)/sum(aa) > std_within,1,'first'));
-    
-    % set threshold value to 65536
-    adj_img = uint16(adj_img * 65536 / thresh); 
+    s = reshape(s, size(chan,1), size(chan,2));
 end
  
 %% PSF Functions 
@@ -230,9 +123,9 @@ function C = center_matrix(rows, cols)
             distance_from_center = sqrt((square_factor*(j-rows/2))^2 + (i-cols/2)^2);
             max_distance = sqrt((square_factor*(rows/2))^2 + (cols/2)^2);
             normalized_distance = distance_from_center/max_distance;
-            rand_num = rand/64;
+            rand_num = rand/32;
 
-            if (normalized_distance^2*rand < rand_num)
+            if (normalized_distance*rand < rand_num)
                 C(j, i) = 1;
             end
         end 
@@ -244,7 +137,7 @@ function C = center_matrix(rows, cols)
     C = zeros(rows, cols);
    
     % use row = m*col to create radial lines coming from the center
-    m = linspace(-1,1,n)
+    m = linspace(-1,1,n);
     center_row = rows/2;
     center_col = cols/2;
     square_factor = cols/rows;

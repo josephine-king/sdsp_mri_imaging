@@ -1,11 +1,22 @@
-
-%% Functions
+% Fuses and filters using a Wiener filter
+% channels1-3 are the k-space channels, and cp1-3 are their corresponding
+% corrupted pixel matrices.
+% fuse_first - if 1, fuse before filtering. otherwsie, filter before fusing
+% fuse_type - can be noise, average, snr, or wiener
+% window_dims - size of the window sliding over the k-space
+% wiener_type - can be wiener, piecewise, or center_piecewise
+% wiener_type_args - some additional arguments that are needed for the
+% piecewise and center_piecewise filters
 function filtered_channels = mri_wiener(channel1, channel2, channel3, cp1, cp2, cp3, fuse_first, fuse_type, window_dims, wiener_type, wiener_type_args)
     functions = common_functions;
 
     if (fuse_first == 1)
-        if (fuse_type == "simple")
-            channels = functions.fuse_channels_simple(channel1,channel2,channel3);
+        if (fuse_type == "noise")
+            channels = functions.fuse_channels_noise(channel1,channel2,channel3);
+        elseif (fuse_type == "snr")
+            channels = functions.fuse_channels_snr(channel1,channel2,channel3);
+        elseif (fuse_type == "average")
+            channels = functions.fuse_channels_average(channel1,channel2,channel3);
         else
             channels = functions.fuse_channels_wiener(channel1,channel2,channel3);
         end
@@ -30,14 +41,50 @@ function filtered_channels = mri_wiener(channel1, channel2, channel3, cp1, cp2, 
             filtered_channel2 = center_piecewise_wiener_filter(channel2, cp2, window_dims, [wiener_type_args(1), wiener_type_args(2)]);
             filtered_channel3 = center_piecewise_wiener_filter(channel3, cp3, window_dims, [wiener_type_args(1), wiener_type_args(2)]);
         end
-        if (fuse_type == "simple")
-            filtered_channels = functions.fuse_channels_simple(filtered_channel1,filtered_channel2,filtered_channel3);
+        if (fuse_type == "noise")
+            filtered_channels = functions.fuse_channels_noise(filtered_channel1,filtered_channel2,filtered_channel3);
+        elseif (fuse_type == "snr")
+            filtered_channels = functions.fuse_channels_snr(filtered_channel1,filtered_channel2,filtered_channel3);
+        elseif (fuse_type == "average")
+            filtered_channels = functions.fuse_channels_average(filtered_channel1,filtered_channel2,filtered_channel3);
         else
             filtered_channels = functions.fuse_channels_wiener(filtered_channel1,filtered_channel2,filtered_channel3);
         end
     end
 end
 
+% Applies a Wiener filter to a k-space channel by sliding a window with
+% window_dims over the space
+function filtered_channel = wiener_filter(channel, corrupted_pixels, window_dims)
+    functions = common_functions;
+    filtered_channel = channel;
+    % The square window excludes the middle column, so the order is smaller
+    % than the window by a factor of window_size
+    row_padding = (window_dims(1)-1)/2;
+    col_padding = (window_dims(2)-1)/2;
+    % Find the correlation matrix and cross correlations between d and x
+    [Rx, r_dx] = functions.get_Rx_rdx(channel, window_dims, corrupted_pixels, 1, size(channel), 1);
+    % Calculate the optimal filter w
+    w = inv(Rx)*r_dx;
+    for row = 1+row_padding:size(channel,1)-row_padding
+        for col = 1+col_padding:size(channel,2)-col_padding
+            % Check if this is a corrupted pixel that needs correcting
+            if (corrupted_pixels(row,col)==1)
+                % Get the x vector by looping through the neighboring columns
+                x = [];
+                for x_col = [col-(col_padding):col-1, col+1:col+(col_padding)]
+                    x = cat(1,x,channel(row-row_padding:row+row_padding, x_col));                        
+                end
+                d = w'*x;
+                filtered_channel(row,col) = d;
+            end
+        end
+    end
+end
+
+% Applies a center piecewise Wiener filter to a k-space channel by sliding a window with
+% window_dims over the space. center_dims specifies how large the center
+% rectangle is 
 function filtered_channel = center_piecewise_wiener_filter(channel, corrupted_pixels, window_dims, center_dims)
     functions = common_functions;
     filtered_channel = channel;
@@ -81,6 +128,9 @@ function filtered_channel = center_piecewise_wiener_filter(channel, corrupted_pi
     end
 end
 
+% Applies a piecewise Wiener filter to a k-space channel by sliding a window with
+% window_dims over the space. num_rows and num_cols specify how the k-space
+% should be divided for the piecewise statistical calculations. 
 function filtered_channel = piecewise_wiener_filter(channel, corrupted_pixels, window_dims, num_rows, num_cols)
     filtered_channel = channel;
     % Round down. Any remaining pixels will be used in the last row/col
@@ -121,33 +171,6 @@ function filtered_channel = piecewise_wiener_filter(channel, corrupted_pixels, w
             if (col_end_pad ~= col_end) filtered_chunk(:,col_end:col_end_pad) = []; end
 
             filtered_channel(row_start:row_end, col_start:col_end) = filtered_chunk;
-        end
-    end
-end
-
-function filtered_channel = wiener_filter(channel, corrupted_pixels, window_dims)
-    functions = common_functions;
-    filtered_channel = channel;
-    % The square window excludes the middle column, so the order is smaller
-    % than the window by a factor of window_size
-    row_padding = (window_dims(1)-1)/2;
-    col_padding = (window_dims(2)-1)/2;
-    % Find the correlation matrix and cross correlations between d and x
-    [Rx, r_dx] = functions.get_Rx_rdx(channel, window_dims, corrupted_pixels, 1, size(channel), 1);
-    % Calculate the optimal filter w
-    w = inv(Rx)*r_dx;
-    for row = 1+row_padding:size(channel,1)-row_padding
-        for col = 1+col_padding:size(channel,2)-col_padding
-            % Check if this is a corrupted pixel that needs correcting
-            if (corrupted_pixels(row,col)==1)
-                % Get the x vector by looping through the neighboring columns
-                x = [];
-                for x_col = [col-(col_padding):col-1, col+1:col+(col_padding)]
-                    x = cat(1,x,channel(row-row_padding:row+row_padding, x_col));                        
-                end
-                d = w'*x;
-                filtered_channel(row,col) = d;
-            end
         end
     end
 end

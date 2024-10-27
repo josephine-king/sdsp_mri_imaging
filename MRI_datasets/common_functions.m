@@ -26,37 +26,16 @@ function [channel1, channel2, channel3] = get_data(slice_num, good_n_bad)
 
 end
 
-function corrupted_lines1 = get_corrupted_lines(channel, threshold1, threshold2)
-    num_rows = size(channel,1);
-    num_cols = size(channel,2);
-    corrupted_lines = zeros(num_rows,num_cols);
-    row_ns = 3;
-    col_ns = 1;
-    for col = 1+col_ns:num_cols-col_ns
-        for row = 1+row_ns:num_rows-row_ns
-            m = channel(row-row_ns:row+row_ns, col-col_ns:col+col_ns);
-            this_col = m(:,col_ns+1);
-            m(:,col_ns+1) = [];
-            Pm = mean(abs(m).^2);
-            P_this_col = mean(abs(this_col).^2);
-
-            r = abs(Pm-P_this_col)/Pm;
- 
-            if (r > threshold1)
-                corrupted_lines(row,col) = r;
-            end
-        end
-        if (norm(corrupted_lines(:,col),1) > threshold2)
-            corrupted_lines(:,col) = ones(size(corrupted_lines,1),1);
-        else
-            corrupted_lines(:,col) = zeros(size(corrupted_lines,1),1);
-        end
-    end
-
-    corrupted_lines1 = zeros(num_rows,num_cols);
+% ---------------------------------------------------------------------
+% Corruption detection functions 
+% ---------------------------------------------------------------------
+% Returns the corrupted lines. These lines are hard-coded numbers that we
+% have visually identified
+function corrupted_lines = get_corrupted_lines(channel)
+    corrupted_lines = zeros(size(channel));
     corrupted_line_nums = [6,22,38,54,70,86,102,118];
     for idx = 1:length(corrupted_line_nums)
-        corrupted_lines1(:,corrupted_line_nums(idx)) = ones(512,1);
+        corrupted_lines(:,corrupted_line_nums(idx)) = ones(512,1);
     end
 end
 
@@ -126,24 +105,47 @@ end
 % ---------------------------------------------------------------------
 % Channel fusion functions 
 % ---------------------------------------------------------------------
-% Fuses channels using a simple method based on the noise and signal
-% variances
-function fused_channels = fuse_channels_simple(channel1, channel2, channel3)
+% Fuses channels using a Wiener filter which approximates the noise
+function fused_channels = fuse_channels_noise(channel1, channel2, channel3)
     [var_v1, var_c1] = common_functions.calculate_variance(channel1, 1/16);
     [var_v2, var_c2] = common_functions.calculate_variance(channel2, 1/16);
     [var_v3, var_c3] = common_functions.calculate_variance(channel3, 1/16);
-    Rx = [var_c1, 0, 0; 0, var_c2, 0; 0, 0, var_c3];
-    rdx = [var_c1-var_v1; var_c2-var_v2; var_c3-var_v3];
-    w = inv(Rx)*rdx;
+    [Rx, r_dx] = common_functions.get_Rx_rdx_for_fusion(channel1, channel2, channel3);
+    rx = Rx(:,1);
+    rv = [(var_v1+var_v2+var_v3)/3; 0; 0];
+    w = inv(Rx)*(rx-rv);
     fused_channels = (w(1)*channel1+w(2)*channel2+w(3)*channel3);
 end
 
+% Fuses the channels by taking the average of the three channels
+function fused_channels = fuse_channels_average(channel1, channel2, channel3)
+    fused_channels = (1/3)*(channel1+channel2+channel3);
+end
+
+% Fuses channels using the SNR-based method
+function fused_channels = fuse_channels_snr(channel1, channel2, channel3)
+    [var_v1, var_c1] = common_functions.calculate_variance(channel1, 1/16);
+    [var_v2, var_c2] = common_functions.calculate_variance(channel2, 1/16);
+    [var_v3, var_c3] = common_functions.calculate_variance(channel3, 1/16);
+    snr1 = var_c1/var_v1;
+    snr2 = var_c2/var_v2;
+    snr3 = var_c3/var_v3;
+    avg_snr = (1/3)*(snr1+snr2+snr3);
+    normalized_snr1 = snr1/avg_snr;
+    normalized_snr2 = snr2/avg_snr;
+    normalized_snr3 = snr3/avg_snr;
+    fused_channels = (normalized_snr1*channel1+normalized_snr2*channel2+normalized_snr3*channel3);
+end
+
+% Fuses channels using a Wiener filter which approximates d as the average of
+% the channels
 function fused_channels = fuse_channels_wiener(channel1, channel2, channel3)
     [Rx, r_dx] = common_functions.get_Rx_rdx_for_fusion(channel1, channel2, channel3);
     w = inv(Rx)*r_dx;
     fused_channels = (w(1)*channel1+w(2)*channel2+w(3)*channel3);
 end
 
+% Gets the Rx and r_dx matrices used in Wiener filter channel fusion
 function [Rx, r_dx] = get_Rx_rdx_for_fusion(channel1, channel2, channel3)
     
     num_rows = size(channel1, 1);
@@ -191,6 +193,11 @@ end
 % ---------------------------------------------------------------------
 % Statistical estimation functions
 % ---------------------------------------------------------------------
+% Returns the Rx and r_dx matrices for given window_dims and a given
+% channel
+% Omits corrupted pixels from the calculations
+% Center_n_edge is used to differentiate between center and edge
+% statistics, which is used in the center piecewise Wiener filter
 function [Rx, r_dx] = get_Rx_rdx(channel, window_dims, corrupted_pixels, center_n_edge, center_dims, omit_corrupted_pixel)
     
     window_rows = window_dims(1);
@@ -210,6 +217,7 @@ function [Rx, r_dx] = get_Rx_rdx(channel, window_dims, corrupted_pixels, center_
         col_rdx = [];
         col_Rs = [];
 
+        % Determine if the row is in the center
         window_row_range = window_start_rows:window_start_rows + window_rows - 1;
         if (window_rows == 1)
             window_row_in_center = (window_start_rows >= center_start_rows && window_start_rows <= center_end_rows);
@@ -219,6 +227,7 @@ function [Rx, r_dx] = get_Rx_rdx(channel, window_dims, corrupted_pixels, center_
         window_start_cols = 1;
 
         while (window_start_cols + window_cols - 1 <= size(channel, 2))
+            % Determine if the column is in the center
             window_end_rows = window_start_rows + window_rows - 1;
             window_end_cols = window_start_cols + window_cols - 1;
             window_col_range = window_start_cols:window_start_cols + window_cols - 1;
@@ -238,15 +247,18 @@ function [Rx, r_dx] = get_Rx_rdx(channel, window_dims, corrupted_pixels, center_
                 continue; 
             end
          
+            % Get the window 
             m = channel(window_start_rows:window_end_rows, window_start_cols:window_end_cols);
+            % Extract the center pixel
             d = m(round((window_rows + 1) / 2), round((window_cols + 1) / 2));
+            % Remove the center column, which contains the corrupted pixels
             if (omit_corrupted_pixel)
                 m(:, round((window_cols + 1) / 2)) = []; 
             end
             v = reshape(m, [], 1);
 
             % Check if there are any corrupted pixels before computing Rx.
-            % The center row doesn't matter as it's not part of the calculation
+            % The center column doesn't matter as it's not part of the calculation
             cps = corrupted_pixels(window_row_range, window_col_range);
             cps(:,round(window_cols+1)/2) = [];
             if (any(cps, 'all'))
@@ -269,6 +281,7 @@ function [Rx, r_dx] = get_Rx_rdx(channel, window_dims, corrupted_pixels, center_
             window_start_cols = window_start_cols + 1;
         end
 
+        % Average all of the r_dx and Rx values
         avg_col_rdx = mean(col_rdx, 2);
         row_rdx = [row_rdx, avg_col_rdx];
 
@@ -278,16 +291,19 @@ function [Rx, r_dx] = get_Rx_rdx(channel, window_dims, corrupted_pixels, center_
         window_start_rows = window_start_rows + 1;
     end
 
+    % Average all of the r_dx and Rx values
     r_dx = mean(row_rdx, 2);
     Rx = mean(row_Rs, 2);
     R_dim = window_rows*window_cols-omit_corrupted_pixel*window_rows;
     Rx = reshape(Rx, R_dim, R_dim);
 end
 
+% Gets the noise variance and variance of the channel. Noise_image_frac specifies what
+% fraction of the image should be used to estimate the noise variance.
+% Always calculates the noise variance from the top left corner
 function [var_v, var_c] = calculate_variance(channel, noise_img_frac)
     % get variance of the whole channel
     var_c = var(reshape(channel, 1, []));
-
     % corner of the image is assumed to have the most noise
     rows_dim = size(channel,1);
     cols_dim = size(channel,2);
@@ -368,6 +384,9 @@ function adj_img = adjust_image(img, fused)
     adj_img = uint16(adj_img * 65536 / thresh); 
 end
 
+% ---------------------------------------------------------------------
+% Simple filtering functions
+% ---------------------------------------------------------------------
 % Pad the k-space data with zeroes
 function padchan = pad_channel(x_pad, y_pad, chan)
 
@@ -408,20 +427,37 @@ function w = get_window(alg, alg_tune, dims)
     end
 end
 
-function fixed_channel = remove_corrupted_lines(channel, corrupted_lines, zero_fill)
-    if (zero_fill) 
-        fixed_channel = channel;
-    else
-        fixed_channel = [];
-    end
+% Removes corrupted lines from a channel
+function fixed_channel = remove_corrupted_lines(channel, corrupted_lines)
+    fixed_channel = [];
     for i = 1:size(corrupted_lines,2)
-        if (corrupted_lines(:,i) == ones(size(corrupted_lines,1),1))
-            if (zero_fill)
-                fixed_channel(:,i) = zeros(size(corrupted_lines,1),1);
+        if (corrupted_lines(:,i) ~= ones(size(corrupted_lines,1),1))
+            fixed_channel = [fixed_channel, channel(:,i)];
+        end
+    end
+end
+
+% Zero fills corrupted pixels in a channel
+function fixed_channel = zero_fill_corrupted_pixels(channel, corrupted_pixels)
+    fixed_channel = channel;
+    for row = 1:size(corrupted_pixels,1)
+        for col = 1:size(corrupted_pixels,2)
+            if (corrupted_pixels(row,col) == 1)
+                fixed_channel(row,col) = 0;
             end
-        else
-            if (~zero_fill)
-                fixed_channel = [fixed_channel, channel(:,i)];
+        end
+    end
+end
+
+% Replaces corrupted pixels with adjacent pixels
+function fixed_channel = replace_corrupted_pixel_with_adjacent_pixel(channel, corrupted_pixels, offset)
+    fixed_channel = channel;
+    range_start = max(1+offset, 1);
+    range_end = min(size(corrupted_pixels,2), size(corrupted_pixels,2)-offset);
+    for row = 1:size(corrupted_pixels,1)
+        for col = range_start:range_end
+            if (corrupted_pixels(row,col) == 1)
+                fixed_channel(row,col) = channel(row,col-offset);
             end
         end
     end
