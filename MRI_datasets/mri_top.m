@@ -10,7 +10,7 @@ corrupted_pixels2 = functions.get_corrupted_pixels(bad_channel2, corrupted_lines
 corrupted_pixels3 = functions.get_corrupted_pixels(bad_channel3, corrupted_lines, .7);
 
 %% Channel fusion
-% Fuse channels 
+% Fuse channels with different techniques
 noise_fused_good_channels = functions.fuse_channels_noise(good_channel1, good_channel2, good_channel3);
 snr_fused_good_channels = functions.fuse_channels_snr(good_channel1, good_channel2, good_channel3);
 average_fused_good_channels = functions.fuse_channels_average(good_channel1, good_channel2, good_channel3);
@@ -223,7 +223,7 @@ title("Center piecewise Wiener-filtered k-space data")
 window_dims = [1,3];
 
 fused_bad_channels = functions.fuse_channels_wiener(bad_channel1, bad_channel2, bad_channel3);
-corrupted_pixels = functions.get_corrupted_pixels(fused_bad_channels, corrupted_lines, -.6);
+corrupted_pixels = functions.get_corrupted_pixels(fused_bad_channels, corrupted_lines, 0.7);
 
 filtered_channels_fuse_first = mri_wiener(bad_channel1, bad_channel2, bad_channel3, corrupted_pixels, corrupted_pixels, corrupted_pixels, 1, "wiener", window_dims, "wiener", []);
 filtered_channels_fuse_second = mri_wiener(bad_channel1, bad_channel2, bad_channel3, corrupted_pixels1, corrupted_pixels2, corrupted_pixels3, 0, "wiener", window_dims, "wiener", []);
@@ -351,7 +351,7 @@ subplot(2,3,6)
 imagesc(corrupted_pixels5)
 title("Identified corrupted pixels, Scan 5, Channel 1")
 
-%% Conclusion - which techniques are the best?
+%% Conclusion plotting - which techniques are the best?
 
 bad_img = functions.get_image_non_fused(bad_channel1, bad_channel2, bad_channel3);
 bad_adj_img = functions.adjust_image(bad_img, 0);
