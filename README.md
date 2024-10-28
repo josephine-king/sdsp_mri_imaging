@@ -8,4 +8,4 @@ mri_wiener.m contains the code for the Wiener filters
 
 mri_kalman.m contains the code for the Kalman filter (not used in our final report)
 
-mri_cs.m contains the code for compressed sensing (explained in the appendix of our report)
+mri_cs.m contains the code for compressed sensing (explained in the appendix of our report). This code must be run seperately and requires the CVX addon for MATLAB. It also might take a long time to run depending on the amount of RAM. 
